@@ -22,28 +22,50 @@ class QwenTextAdapter(BaseAdapter):
     def __init__(self, config_path: str):
         super().__init__(config_path)
         
-        # Get vLLM settings from centralized config
-        self.vllm_settings = self.config.get('vllm_settings', {})
+        # Get vLLM settings from centralized config - ALL REQUIRED
+        if 'vllm_settings' not in self.config:
+            raise ValueError("Missing required 'vllm_settings' in configuration")
+        self.vllm_settings = self.config['vllm_settings']
         
-        # Initialize attributes from centralized vllm_settings
-        self.port = self.vllm_settings.get('port', 8001)
-        self.server_url = f"http://localhost:{self.port}"  # Auto-construct from port
-        self.model_name = self.vllm_settings.get('served_model_name', 'Qwen3-14B-unsloth-bnb-4bit')
-        self.model_path = self.vllm_settings.get('model_path', './models/Qwen3-14B-unsloth-bnb-4bit')
-        self.timeout = self.config.get('timeout', 60)
-        self.auto_start = self.config.get('auto_start', True)
+        # Initialize attributes from centralized vllm_settings - NO DEFAULTS
+        required_vllm_keys = ['port', 'served_model_name', 'model_path']
+        for key in required_vllm_keys:
+            if key not in self.vllm_settings:
+                raise ValueError(f"Missing required vLLM setting: {key}")
+        
+        self.port = self.vllm_settings['port']
+        self.server_url = f"http://localhost:{self.port}"
+        self.model_name = self.vllm_settings['served_model_name']
+        self.model_path = self.vllm_settings['model_path']
+        
+        # Required application settings - NO DEFAULTS
+        required_app_keys = ['timeout', 'auto_start']
+        for key in required_app_keys:
+            if key not in self.config:
+                raise ValueError(f"Missing required application setting: {key}")
+        
+        self.timeout = self.config['timeout']
+        self.auto_start = self.config['auto_start']
         self.vllm_process = None
         
-        # Initialize model parameters from centralized config (needed early)
-        model_params = self.config.get('model_params', {})
+        # Initialize model parameters from centralized config - ALL REQUIRED
+        if 'model_params' not in self.config:
+            raise ValueError("Missing required 'model_params' in configuration")
+        model_params = self.config['model_params']
+        
+        required_param_keys = ['temperature', 'max_tokens', 'top_p', 'top_k', 'repetition_penalty', 'frequency_penalty', 'presence_penalty']
+        for key in required_param_keys:
+            if key not in model_params:
+                raise ValueError(f"Missing required model parameter: {key}")
+        
         self.default_params = {
-            'temperature': model_params.get('temperature', 0.6),
-            'max_tokens': model_params.get('max_tokens', 8192),
-            'top_p': model_params.get('top_p', 0.95),
-            'top_k': model_params.get('top_k', 20),
-            'repetition_penalty': model_params.get('repetition_penalty', 1.1),
-            'frequency_penalty': model_params.get('frequency_penalty', 0.0),
-            'presence_penalty': model_params.get('presence_penalty', 0.0),
+            'temperature': model_params['temperature'],
+            'max_tokens': model_params['max_tokens'],
+            'top_p': model_params['top_p'],
+            'top_k': model_params['top_k'],
+            'repetition_penalty': model_params['repetition_penalty'],
+            'frequency_penalty': model_params['frequency_penalty'],
+            'presence_penalty': model_params['presence_penalty'],
         }
     
     def initialize(self):
@@ -83,33 +105,64 @@ class QwenTextAdapter(BaseAdapter):
         logger.info(f"🔧 Starting vLLM server for {self.model_name} on port {self.port}")
         
         try:
-            # Build vLLM command from centralized settings
+            # Build vLLM command from centralized settings - ALL REQUIRED
+            required_cmd_keys = ['model_path', 'port', 'host', 'served_model_name', 'max_model_len', 
+                               'quantization', 'load_format', 'gpu_memory_utilization', 'dtype', 
+                               'max_num_seqs', 'tensor_parallel_size']
+            
+            for key in required_cmd_keys:
+                if key not in self.vllm_settings:
+                    raise ValueError(f"Missing required vLLM setting for command: {key}")
+            
             cmd = [
                 "python", "-m", "vllm.entrypoints.openai.api_server",
-                "--model", self.vllm_settings.get('model_path', self.model_path),
-                "--port", str(self.vllm_settings.get('port', self.port)),
-                "--host", self.vllm_settings.get('host', '0.0.0.0'),
-                "--served-model-name", self.vllm_settings.get('served_model_name', self.model_name),
-                "--max-model-len", str(self.vllm_settings.get('max_model_len', 8192)),
-                "--quantization", self.vllm_settings.get('quantization', 'bitsandbytes'),
-                "--load-format", self.vllm_settings.get('load_format', 'bitsandbytes'),
-                "--gpu-memory-utilization", str(self.vllm_settings.get('gpu_memory_utilization', 0.6)),
-                "--dtype", self.vllm_settings.get('dtype', 'auto'),
-                "--max-num-seqs", str(self.vllm_settings.get('max_num_seqs', 64)),
-                "--tensor-parallel-size", str(self.vllm_settings.get('tensor_parallel_size', 1))
+                "--model", self.vllm_settings['model_path'],
+                "--port", str(self.vllm_settings['port']),
+                "--host", self.vllm_settings['host'],
+                "--served-model-name", self.vllm_settings['served_model_name'],
+                "--max-model-len", str(self.vllm_settings['max_model_len']),
+                "--quantization", self.vllm_settings['quantization'],
+                "--load-format", self.vllm_settings['load_format'],
+                "--gpu-memory-utilization", str(self.vllm_settings['gpu_memory_utilization']),
+                "--dtype", self.vllm_settings['dtype'],
+                "--max-num-seqs", str(self.vllm_settings['max_num_seqs']),
+                "--tensor-parallel-size", str(self.vllm_settings['tensor_parallel_size'])
             ]
             
-            # Add optional flags
-            if self.vllm_settings.get('trust_remote_code', True):
+            # Add required boolean flags - NO DEFAULTS
+            required_bool_keys = ['trust_remote_code', 'disable_log_requests', 'disable_custom_all_reduce', 'enforce_eager']
+            for key in required_bool_keys:
+                if key not in self.vllm_settings:
+                    raise ValueError(f"Missing required vLLM boolean setting: {key}")
+            
+            if self.vllm_settings['trust_remote_code']:
                 cmd.append("--trust-remote-code")
-            if self.vllm_settings.get('disable_log_requests', True):
+            if self.vllm_settings['disable_log_requests']:
                 cmd.append("--disable-log-requests")
+            if self.vllm_settings['disable_custom_all_reduce']:
+                cmd.append("--disable-custom-all-reduce")
+            if self.vllm_settings['enforce_eager']:
+                cmd.append("--enforce-eager")
             
             logger.info(f"💻 Command: {' '.join(cmd)}")
             
-            # Set environment variables from centralized config
+            # Set environment variables from centralized config - REQUIRED
+            if 'environment' not in self.vllm_settings:
+                raise ValueError("Missing required 'environment' section in vllm_settings")
+            
             env = os.environ.copy()
-            env_vars = self.vllm_settings.get('environment', {})
+            env_vars = self.vllm_settings['environment']
+            
+            required_env_keys = [
+                'PYTORCH_CUDA_ALLOC_CONF', 'VLLM_SKIP_P2P_CHECK', 'TRANSFORMERS_OFFLINE',
+                'CUDA_LAUNCH_BLOCKING', 'PYTORCH_NO_CUDA_MEMORY_CACHING', 'VLLM_DISABLE_CUDA_GRAPHS',
+                'VLLM_USE_V1', 'VLLM_DISABLE_COMPILATION', 'TORCH_COMPILE_DISABLE', 'VLLM_WORKER_MULTIPROC_METHOD'
+            ]
+            
+            for key in required_env_keys:
+                if key not in env_vars:
+                    raise ValueError(f"Missing required environment variable: {key}")
+            
             for key, value in env_vars.items():
                 env[key] = str(value)
             
@@ -283,11 +336,16 @@ class QwenTextAdapter(BaseAdapter):
     async def _health_check_implementation(self) -> bool:
         """Check if Qwen text model can be used (server running or can auto-start)"""
         try:
-            # Get model path from config (don't rely on initialized attribute)
-            model_path = self.config.get('model_path', './models/Qwen3-30B-A3B-bnb-4bit')
+            # Get model path from config - NO DEFAULTS
+            if 'vllm_settings' not in self.config or 'model_path' not in self.config['vllm_settings']:
+                raise ValueError("Missing required model_path in vllm_settings")
+            model_path = self.config['vllm_settings']['model_path']
             
-            # First check if server is already running
-            server_url = self.config.get('server_url', 'http://localhost:8001')
+            # First check if server is already running - NO DEFAULTS
+            if 'vllm_settings' not in self.config or 'port' not in self.config['vllm_settings']:
+                raise ValueError("Missing required port in vllm_settings")
+            port = self.config['vllm_settings']['port']
+            server_url = f"http://localhost:{port}"
             try:
                 import aiohttp
                 async with aiohttp.ClientSession() as session:

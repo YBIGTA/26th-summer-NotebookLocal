@@ -5,13 +5,19 @@
 
 set -e
 
-MODEL_TYPE=${1:-text}
+# Require model type parameter - NO DEFAULT
+if [ -z "$1" ]; then
+    echo "❌ Error: Model type parameter is required"
+    echo "Usage: $0 [text|vision]"
+    exit 1
+fi
+MODEL_TYPE=$1
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 cd "$PROJECT_ROOT"
 
-# Function to read YAML values using Python
+# Function to read YAML values using Python - NO DEFAULTS ALLOWED
 get_yaml_value() {
     python -c "
 import yaml
@@ -26,8 +32,8 @@ for key in keys:
     if isinstance(value, dict) and key in value:
         value = value[key]
     else:
-        print('$3')  # default value
-        sys.exit(0)
+        print(f'ERROR: Missing required configuration key: $2', file=sys.stderr)
+        sys.exit(1)
         
 print(value)
 "
@@ -52,32 +58,52 @@ esac
 
 echo "📋 Reading configuration from: $CONFIG_FILE"
 
-# Read all settings from YAML config
-MODEL_PATH=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.model_path" "./models/default")
-PORT=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.port" "8001")
-HOST=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.host" "0.0.0.0")
-MODEL_NAME=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.served_model_name" "default")
-MAX_LEN=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.max_model_len" "8192")
-GPU_MEM=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.gpu_memory_utilization" "0.65")
-MAX_SEQS=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.max_num_seqs" "32")
-TENSOR_PARALLEL=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.tensor_parallel_size" "1")
-QUANTIZATION=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.quantization" "bitsandbytes")
-LOAD_FORMAT=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.load_format" "bitsandbytes")
-DTYPE=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.dtype" "auto")
-TRUST_REMOTE_CODE=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.trust_remote_code" "true")
-DISABLE_LOG_REQUESTS=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.disable_log_requests" "true")
+# Read all settings from YAML config - ALL REQUIRED, NO DEFAULTS
+echo "📋 Validating required configuration parameters..."
 
-# Vision-specific settings
+# Required vLLM settings - will exit with error if missing
+MODEL_PATH=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.model_path")
+PORT=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.port")
+HOST=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.host")
+MODEL_NAME=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.served_model_name")
+MAX_LEN=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.max_model_len")
+GPU_MEM=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.gpu_memory_utilization")
+MAX_SEQS=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.max_num_seqs")
+TENSOR_PARALLEL=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.tensor_parallel_size")
+QUANTIZATION=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.quantization")
+LOAD_FORMAT=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.load_format")
+DTYPE=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.dtype")
+TRUST_REMOTE_CODE=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.trust_remote_code")
+DISABLE_LOG_REQUESTS=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.disable_log_requests")
+DISABLE_CUSTOM_ALL_REDUCE=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.disable_custom_all_reduce")
+ENFORCE_EAGER=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.enforce_eager")
+
+echo "✅ All required vLLM settings validated"
+
+# Vision-specific settings - REQUIRED if vision model
 if [ "$MODEL_TYPE" = "vision" ]; then
-    EXTRA_ARGS="--limit-mm-per-prompt image=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.max_images_per_prompt" "16")"
+    MAX_IMAGES=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.max_images_per_prompt")
+    EXTRA_ARGS="--limit-mm-per-prompt image=$MAX_IMAGES"
+    echo "✅ Vision-specific settings validated"
 else
     EXTRA_ARGS=""
 fi
 
-# Set environment variables from config
-export PYTORCH_CUDA_ALLOC_CONF=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.environment.PYTORCH_CUDA_ALLOC_CONF" "expandable_segments:True")
-export VLLM_SKIP_P2P_CHECK=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.environment.VLLM_SKIP_P2P_CHECK" "1")
-export TRANSFORMERS_OFFLINE=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.environment.TRANSFORMERS_OFFLINE" "1")
+# Set environment variables from config - ALL REQUIRED
+echo "🔧 Setting required environment variables..."
+
+export PYTORCH_CUDA_ALLOC_CONF=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.environment.PYTORCH_CUDA_ALLOC_CONF")
+export VLLM_SKIP_P2P_CHECK=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.environment.VLLM_SKIP_P2P_CHECK")
+export TRANSFORMERS_OFFLINE=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.environment.TRANSFORMERS_OFFLINE")
+export CUDA_LAUNCH_BLOCKING=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.environment.CUDA_LAUNCH_BLOCKING")
+export PYTORCH_NO_CUDA_MEMORY_CACHING=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.environment.PYTORCH_NO_CUDA_MEMORY_CACHING")
+export VLLM_DISABLE_CUDA_GRAPHS=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.environment.VLLM_DISABLE_CUDA_GRAPHS")
+export VLLM_USE_V1=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.environment.VLLM_USE_V1")
+export VLLM_DISABLE_COMPILATION=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.environment.VLLM_DISABLE_COMPILATION")
+export TORCH_COMPILE_DISABLE=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.environment.TORCH_COMPILE_DISABLE")
+export VLLM_WORKER_MULTIPROC_METHOD=$(get_yaml_value "$CONFIG_FILE" "vllm_settings.environment.VLLM_WORKER_MULTIPROC_METHOD")
+
+echo "✅ All required environment variables set"
 
 echo "📍 Model path: $MODEL_PATH"
 echo "🔌 Port: $PORT"
@@ -126,6 +152,14 @@ fi
 
 if [ "$DISABLE_LOG_REQUESTS" = "true" ]; then
     CMD_ARGS+=(--disable-log-requests)
+fi
+
+if [ "$DISABLE_CUSTOM_ALL_REDUCE" = "true" ]; then
+    CMD_ARGS+=(--disable-custom-all-reduce)
+fi
+
+if [ "$ENFORCE_EAGER" = "true" ]; then
+    CMD_ARGS+=(--enforce-eager)
 fi
 
 # Add vision-specific args
