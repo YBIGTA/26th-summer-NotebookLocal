@@ -1,0 +1,29 @@
+# Routing rules configuration
+rules:
+  # Explicit model mappings
+  explicit_models:
+    - models: [gpt-4, gpt-4-turbo, gpt-3.5-turbo]
+      adapter: openai
+    - models: [claude-3-5-sonnet-20241022, claude-3-opus-20240229, claude-3-sonnet-20240229, claude-3-5-haiku-20241022, claude-3-haiku-20240307, claude]
+      adapter: anthropic
+    - models: [Qwen3-30B-A3B-bnb-4bit]
+      adapter: qwen_text
+    - models: [Qwen2.5-VL-7B-Instruct-unsloth-bnb-4bit]
+      adapter: qwen_vision
+  
+  # Content-based routing
+  vision_default: qwen_vision
+  
+  # Complexity-based routing
+  complexity_threshold: 2000000000  # characters
+  complex_default: anthropic  # Use Claude for complex reasoning tasks
+  
+  # Default adapter for simple requests
+  default_adapter: qwen_text
+
+# Fallback chain
+fallback_chain:
+  - qwen_text  # Local, always available
+  - anthropic  # High-quality reasoning
+  - openai
+  - qwen_vision

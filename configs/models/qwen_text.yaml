@@ -1,0 +1,66 @@
+# Qwen3-14B text model configuration
+name: qwen3-14b
+model_id: Qwen3-14B-unsloth-bnb-4bit
+
+# vLLM Server Configuration - SINGLE SOURCE OF TRUTH
+vllm_settings:
+  # Basic server settings
+  host: 0.0.0.0
+  port: 8001
+  model_path: ./models/Qwen3-14B-unsloth-bnb-4bit
+  served_model_name: Qwen3-14B-unsloth-bnb-4bit
+  
+  # Memory and performance settings
+  max_model_len: 8192                # Context window (server-side)
+  gpu_memory_utilization: 0.65       # GPU memory usage (45% - very conservative)
+  max_num_seqs: 2                    # Concurrent sequences (minimal)
+  tensor_parallel_size: 1            # Single GPU
+  
+  # Model loading settings
+  quantization: bitsandbytes         # Use BitsAndBytes quantization
+  load_format: bitsandbytes          # Loading format
+  dtype: auto                        # Auto-detect data type
+  trust_remote_code: true            # Allow custom model code
+  
+  # Optimization flags
+  disable_log_requests: true         # Reduce logging overhead
+  
+  # Environment variables
+  environment:
+    PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True,max_split_size_mb:128"  # Fix CUDA fragmentation + limit splits
+    VLLM_SKIP_P2P_CHECK: "1"                           # Skip P2P checks
+    TRANSFORMERS_OFFLINE: "1"                          # Offline mode
+    CUDA_LAUNCH_BLOCKING: "0"                          # Async execution
+    PYTORCH_NO_CUDA_MEMORY_CACHING: "0"                # Keep caching enabled
+
+# Application Settings
+auto_start: true                     # Auto-start vLLM server if not running
+timeout: 60                          # Request timeout (seconds)
+
+# Inference Parameters (client-side defaults)
+model_params:
+  temperature: 0.6                   # Sampling temperature
+  max_tokens: 4096                   # Max output tokens (reasonable default)
+  top_p: 0.95                        # Nucleus sampling
+  top_k: 20                          # Top-K sampling
+  repetition_penalty: 1.1            # Repetition penalty
+  frequency_penalty: 0.0             # Frequency penalty
+  presence_penalty: 0.0              # Presence penalty
+
+# System Configuration
+system_prompt: "You are Qwen, a helpful AI assistant."
+
+# Performance Tuning
+batch_size: 4                        # Batch processing size
+max_concurrent_requests: 3          # Max concurrent requests
+
+# Capabilities
+capabilities:
+  vision: false                      # Text-only model
+  streaming: true                    # Supports streaming
+
+# Auto-derived Properties (read-only - computed from vllm_settings)
+# These are automatically set by the adapter code:
+# - server_url: http://localhost:{vllm_settings.port}
+# - model_path: {vllm_settings.model_path} 
+# - context_window: {vllm_settings.max_model_len}
