@@ -62,7 +62,7 @@ python src/main.py
 2. **Place local models** (optional for offline inference):
    ```
    models/
-   ├── Qwen3-30B-A3B-bnb-4bit/          # Text model (20-25GB VRAM)
+   ├── Qwen3-14B-unsloth-bnb-4bit/          # Text model (8-12GB VRAM)
    └── Qwen2.5-VL-7B-Instruct-unsloth-bnb-4bit/  # Vision model (8-12GB VRAM)
    ```
 
@@ -101,7 +101,7 @@ curl -X POST "http://localhost:8000/v1/chat/completions" \
 curl -X POST "http://localhost:8000/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "qwen3-30b", 
+    "model": "qwen3-14b", 
     "messages": [{"role": "user", "content": "Fast local inference"}]
   }'
 ```
@@ -128,7 +128,7 @@ curl -X POST "http://localhost:8000/v1/chat/completions" \
 curl -X POST "http://localhost:8000/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "qwen3-30b",
+    "model": "qwen3-14b",
     "messages": [{"role": "user", "content": "Stream this response"}],
     "stream": true
   }'
@@ -142,7 +142,7 @@ The router automatically selects the best adapter based on:
 ```
 gpt-4, gpt-3.5-turbo → openai
 claude-3-5-sonnet → anthropic  
-qwen3-30b → qwen_text (auto-starts vLLM)
+qwen3-14b → qwen_text (auto-starts vLLM)
 ```
 
 ### 2. Content-Based Routing
@@ -174,11 +174,16 @@ auto_start: false   # Disable (use manual scripts)
 
 ### Manual Scripts (Fallback)
 
+⚠️ **Updated Scripts**: Now require explicit parameters with no defaults.
+
 ```bash
-# Start local model servers manually
-./scripts/start_qwen_text.sh      # Port 8001
-./scripts/start_qwen_vision.sh    # Port 8002
+# Start local model servers manually (parameters now required)
+./scripts/start_vllm.sh text      # REQUIRED: specify 'text' or 'vision'
+./scripts/start_qwen_text.sh      # Text model startup (all params required)
 ./scripts/stop_vllm.sh           # Stop all servers
+
+# The scripts will now fail with clear error messages if any 
+# required configuration parameters are missing
 ```
 
 ## 📊 Supported Models
@@ -192,8 +197,10 @@ auto_start: false   # Disable (use manual scripts)
 ### Local Models (Auto-Startup)
 | Model | Type | VRAM | Port | Features |
 |-------|------|------|------|---------|
-| **Qwen3-30B-A3B-bnb-4bit** | Text | 20-25GB | 8001 | Fast inference, 131K context |
+| **Qwen3-14B-unsloth-bnb-4bit** | Text | 8-12GB | 8001 | Fast inference, 27K context |
 | **Qwen2.5-VL-7B-Instruct** | Vision | 8-12GB | 8002 | Image analysis, OCR, 32K context |
+
+⚠️ **Configuration Note**: All model parameters are now **mandatory** - no default values are provided. Missing configuration will result in clear error messages.
 
 ## 🏗️ Project Structure
 
@@ -292,22 +299,77 @@ fallback_chain: [qwen_text, anthropic, openai, qwen_vision]
 
 ### Auto-Startup Settings (`configs/models/qwen_text.yaml`)
 
+⚠️ **IMPORTANT: NO DEFAULT PARAMETERS** - All configuration values are now **REQUIRED** and must be explicitly set.
+
 ```yaml
-name: qwen3-30b
-model_name: Qwen3-30B-A3B-bnb-4bit
-server_url: http://localhost:8001
-model_path: ./models/Qwen3-30B-A3B-bnb-4bit
-auto_start: true                    # Enable auto-startup
+# ALL PARAMETERS ARE REQUIRED - NO DEFAULTS PROVIDED
+name: qwen3-14b
+model_id: Qwen3-14B-unsloth-bnb-4bit
 
-# Model parameters
-temperature: 0.6
-max_tokens: 8192
-context_window: 131072
+# vLLM Server Configuration - ALL MANDATORY
+vllm_settings:
+  # Basic server settings - REQUIRED
+  host: 0.0.0.0
+  port: 8001
+  model_path: ./models/Qwen3-14B-unsloth-bnb-4bit
+  served_model_name: Qwen3-14B-unsloth-bnb-4bit
+  
+  # Memory and performance settings - REQUIRED
+  max_model_len: 27648
+  gpu_memory_utilization: 0.75
+  max_num_seqs: 1
+  tensor_parallel_size: 1
+  swap_space: 16
+  
+  # Model loading settings - REQUIRED
+  quantization: bitsandbytes
+  load_format: bitsandbytes
+  dtype: auto
+  trust_remote_code: true
+  
+  # Optimization flags - REQUIRED
+  disable_log_requests: true
+  disable_custom_all_reduce: true
+  enforce_eager: true
+  
+  # Environment variables - REQUIRED
+  environment:
+    PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True,max_split_size_mb:128"
+    VLLM_SKIP_P2P_CHECK: "1"
+    TRANSFORMERS_OFFLINE: "1"
+    CUDA_LAUNCH_BLOCKING: "1"
+    PYTORCH_NO_CUDA_MEMORY_CACHING: "0"
+    VLLM_DISABLE_CUDA_GRAPHS: "1"
+    VLLM_USE_V1: "0"
+    VLLM_DISABLE_COMPILATION: "1"
+    TORCH_COMPILE_DISABLE: "1"
+    VLLM_WORKER_MULTIPROC_METHOD: "spawn"
 
-# Performance settings  
-batch_size: 4
-max_concurrent_requests: 10
+# Application Settings - REQUIRED
+auto_start: true
 timeout: 60
+
+# Inference Parameters - ALL REQUIRED
+model_params:
+  temperature: 0.6
+  max_tokens: 4096
+  top_p: 0.95
+  top_k: 20
+  repetition_penalty: 1.1
+  frequency_penalty: 0.0
+  presence_penalty: 0.0
+
+# System Configuration - REQUIRED
+system_prompt: "You are Qwen, a helpful AI assistant."
+
+# Performance Tuning - REQUIRED
+batch_size: 1
+max_concurrent_requests: 1
+
+# Capabilities - REQUIRED
+capabilities:
+  vision: false
+  streaming: true
 ```
 
 ## 🔍 Monitoring
@@ -347,6 +409,25 @@ uv run python src/main.py | grep "Starting vLLM"
 
 ## 🚨 Troubleshooting
 
+### Configuration Errors (NEW)
+
+**Problem**: `Missing required configuration key` or `ERROR: Missing required...`
+
+**Solutions**:
+```bash
+# Check your config files have ALL required parameters
+# No defaults are provided - every parameter must be explicitly set
+
+# For qwen_text.yaml, ensure all sections are present:
+# - vllm_settings (with ALL sub-parameters)
+# - model_params (with ALL inference parameters)
+# - environment variables (ALL 10 required)
+# - capabilities, system_prompt, etc.
+
+# Scripts will now fail fast with clear error messages
+# Check the error output for the specific missing parameter
+```
+
 ### Local Models Won't Start
 
 **Problem**: `Model not found` or `vLLM server failed to start`
@@ -354,7 +435,7 @@ uv run python src/main.py | grep "Starting vLLM"
 **Solutions**:
 ```bash
 # Check model files exist
-ls -la models/Qwen3-30B-A3B-bnb-4bit/
+ls -la models/Qwen3-14B-unsloth-bnb-4bit/
 
 # Check GPU memory
 nvidia-smi
@@ -362,8 +443,9 @@ nvidia-smi
 # Check vLLM installation
 python -c "import vllm; print('vLLM OK')"
 
-# Manual startup for debugging
-./scripts/start_qwen_text.sh
+# Manual startup for debugging (now requires explicit parameter)
+./scripts/start_vllm.sh text  # REQUIRED parameter
+./scripts/start_qwen_text.sh  # All config values must be present
 ```
 
 ### API Key Issues
@@ -411,7 +493,7 @@ port: 8001
 - **Subsequent requests**: <5 seconds
 
 ### Memory Requirements
-- **Qwen3-30B**: 20-25GB VRAM
+- **Qwen3-14B**: 8-12GB VRAM
 - **Qwen2.5-VL**: 8-12GB VRAM  
 - **Router process**: ~100MB RAM
 
