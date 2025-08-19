@@ -1,9 +1,5 @@
-import { CustomModel } from "@/aiParams";
-import { AcceptKeyOption } from "@/autocomplete/codemirrorIntegration";
-import { type CopilotSettings } from "@/settings/model";
-import { v4 as uuidv4 } from "uuid";
-import { ChainType } from "./chainFactory";
-import { PromptSortStrategy } from "./types";
+// Clean constants - only essential plugin constants
+import { CopilotSettings } from "./types";
 
 export const BREVILABS_API_BASE_URL = "https://api.brevilabs.com/v1";
 export const CHAT_VIEWTYPE = "copilot-chat-view";

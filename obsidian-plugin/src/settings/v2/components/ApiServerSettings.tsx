@@ -1,3 +1,4 @@
+import React, { useState } from "react";
 import { getSettings, updateSetting } from "@/settings/model";
 import { useAtomValue } from "jotai";
 import { settingsAtom } from "@/settings/model";
@@ -5,7 +6,6 @@ import { SettingItem } from "@/components/ui/setting-item";
 import { SettingSwitch } from "@/components/ui/setting-switch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useState } from "react";
 import { apiClient, updateApiClientSettings } from "@/api/ApiClient";
 
 export default function ApiServerSettings() {

@@ -20,6 +20,22 @@
     "types": ["jest", "node"],
     "lib": ["DOM", "ES5", "ES6", "ES7", "ES2022"]
   },
-  "include": ["src/**/*", "typings/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/main.ts", 
+    "src/**/*-clean.*", 
+    "src/constants-clean.ts",
+    "src/autocomplete/codemirrorIntegration-stub.ts",
+    "typings/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules", 
+    "dist",
+    "src/LLMProviders/**/*",
+    "src/tools/**/*",
+    "src/search/**/*",
+    "src/cache/**/*",
+    "src/chainFactory.ts",
+    "src/main-original.ts",
+    "**/*.test.*"
+  ]
 }

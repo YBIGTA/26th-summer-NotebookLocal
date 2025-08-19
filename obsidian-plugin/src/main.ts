@@ -1,430 +1,131 @@
-import { BrevilabsClient } from "@/LLMProviders/brevilabsClient";
-import ProjectManager from "@/LLMProviders/projectManager";
-import { CustomModel, getCurrentProject } from "@/aiParams";
-import { AutocompleteService } from "@/autocomplete/autocompleteService";
-import { parseChatContent } from "@/chatUtils";
-import { registerCommands } from "@/commands";
-import CopilotView from "@/components/CopilotView";
-import { APPLY_VIEW_TYPE, ApplyView } from "@/components/composer/ApplyView";
-import { LoadChatHistoryModal } from "@/components/modals/LoadChatHistoryModal";
-
-import { ABORT_REASON, CHAT_VIEWTYPE, DEFAULT_OPEN_AREA, EVENT_NAMES } from "@/constants";
-import { registerContextMenu } from "@/commands/contextMenu";
-import { encryptAllKeys } from "@/encryptionService";
-import { logInfo } from "@/logger";
-import { checkIsPlusUser } from "@/plusUtils";
-import { HybridRetriever } from "@/search/hybridRetriever";
-import VectorStoreManager from "@/search/vectorStoreManager";
-import { CopilotSettingTab } from "@/settings/SettingsPage";
-import {
-  getModelKeyFromModel,
-  getSettings,
-  sanitizeSettings,
-  setSettings,
-  subscribeToSettingsChange,
-} from "@/settings/model";
-import { FileParserManager } from "@/tools/FileParserManager";
-import { initializeBuiltinTools } from "@/tools/builtinTools";
-import {
-  Editor,
-  MarkdownView,
-  Menu,
-  Notice,
-  Plugin,
-  TFile,
-  TFolder,
-  WorkspaceLeaf,
-} from "obsidian";
-import { IntentAnalyzer } from "./LLMProviders/intentAnalyzer";
-import { CustomCommandRegister } from "@/commands/customCommandRegister";
-import { migrateCommands, suggestDefaultCommands } from "@/commands/migrator";
-import { ChatManager } from "@/core/ChatManager";
-import { MessageRepository } from "@/core/MessageRepository";
-import { ChatUIState } from "@/state/ChatUIState";
-import { createQuickCommandContainer } from "@/components/QuickCommand";
-import { QUICK_COMMAND_CODE_BLOCK } from "@/commands/constants";
+// Clean Obsidian Plugin - HTTP Client Only
+import { Plugin, WorkspaceLeaf, Notice } from "obsidian";
+import { ApiClient } from "./api/ApiClient";
+import { getSettings, setSettings } from "./settings/model";
+import { CHAT_VIEWTYPE } from "./constants-minimal";
 
 export default class CopilotPlugin extends Plugin {
-  // Plugin components
-  projectManager: ProjectManager;
-  brevilabsClient: BrevilabsClient;
-  userMessageHistory: string[] = [];
-  vectorStoreManager: VectorStoreManager;
-  fileParserManager: FileParserManager;
-  customCommandRegister: CustomCommandRegister;
-  settingsUnsubscriber?: () => void;
-  private autocompleteService: AutocompleteService;
-  chatUIState: ChatUIState;
+  // Core components
+  apiClient: ApiClient;
+  settings: any;
 
-  async onload(): Promise<void> {
+  async onload() {
+    console.log("Loading Obsidian Copilot Plugin");
+
+    // Load settings
     await this.loadSettings();
-    this.settingsUnsubscriber = subscribeToSettingsChange(async (prev, next) => {
-      if (next.enableEncryption) {
-        await this.saveData(await encryptAllKeys(next));
-      } else {
-        await this.saveData(next);
-      }
-      registerCommands(this, prev, next);
-    });
-    this.addSettingTab(new CopilotSettingTab(this.app, this));
 
-    // Core plugin initialization
+    // Initialize API client
+    this.apiClient = new ApiClient(this.settings);
 
-    // Initialize built-in tools with vault access
-    initializeBuiltinTools(this.app.vault);
+    // TODO: Register views when UI components are ready
+    // this.registerView(CHAT_VIEWTYPE, (leaf) => new CopilotView(leaf, this));
 
-    this.vectorStoreManager = VectorStoreManager.getInstance();
+    // TODO: Add settings tab when settings UI is ready
+    // this.addSettingTab(new CopilotSettingTab(this.app, this));
 
-    // Initialize BrevilabsClient
-    this.brevilabsClient = BrevilabsClient.getInstance();
-    this.brevilabsClient.setPluginVersion(this.manifest.version);
-    checkIsPlusUser();
+    // Register commands
+    this.addCommands();
 
-    // Initialize ProjectManager
-    this.projectManager = ProjectManager.getInstance(this.app, this.vectorStoreManager, this);
-
-    // Initialize FileParserManager early with other core services
-    this.fileParserManager = new FileParserManager(this.brevilabsClient, this.app.vault);
-
-    // Initialize ChatUIState with new architecture
-    const messageRepo = new MessageRepository();
-    const chainManager = this.projectManager.getCurrentChainManager();
-    const chatManager = new ChatManager(messageRepo, chainManager, this.fileParserManager, this);
-    this.chatUIState = new ChatUIState(chatManager);
-
-    this.registerView(CHAT_VIEWTYPE, (leaf: WorkspaceLeaf) => new CopilotView(leaf, this));
-    this.registerView(APPLY_VIEW_TYPE, (leaf: WorkspaceLeaf) => new ApplyView(leaf));
-
-    this.initActiveLeafChangeHandler();
-
-    this.addRibbonIcon("message-square", "Open Copilot Chat", (evt: MouseEvent) => {
-      this.activateView();
+    // Add ribbon icon
+    this.addRibbonIcon("message-circle", "Open Copilot Chat", () => {
+      this.openChatView();
     });
 
-    registerCommands(this, undefined, getSettings());
-
-    this.registerMarkdownCodeBlockProcessor(QUICK_COMMAND_CODE_BLOCK, (_, el) => {
-      createQuickCommandContainer({
-        plugin: this,
-        element: el,
-      });
-
-      // Remove parent element class names to clear default code block styling
-      if (el.parentElement) {
-        el.parentElement.className = "";
-      }
-    });
-
-    IntentAnalyzer.initTools(this.app.vault);
-
-    this.registerEvent(
-      this.app.workspace.on("editor-menu", (menu: Menu) => {
-        return registerContextMenu(menu);
-      })
-    );
-
-    this.registerEvent(
-      this.app.workspace.on("active-leaf-change", (leaf) => {
-        if (leaf && leaf.view instanceof MarkdownView) {
-          const file = leaf.view.file;
-          if (file) {
-            const activeCopilotView = this.app.workspace
-              .getLeavesOfType(CHAT_VIEWTYPE)
-              .find((leaf) => leaf.view instanceof CopilotView)?.view as CopilotView;
-
-            if (activeCopilotView) {
-              const event = new CustomEvent(EVENT_NAMES.ACTIVE_LEAF_CHANGE);
-              activeCopilotView.eventTarget.dispatchEvent(event);
-            }
-          }
-        }
-      })
-    );
-
-    // Initialize autocomplete service
-    this.autocompleteService = AutocompleteService.getInstance(this);
-    this.customCommandRegister = new CustomCommandRegister(this, this.app.vault);
-    this.app.workspace.onLayoutReady(() => {
-      this.customCommandRegister.initialize().then(migrateCommands).then(suggestDefaultCommands);
-    });
+    console.log("Copilot Plugin loaded successfully");
   }
 
   async onunload() {
-    if (this.vectorStoreManager) {
-      this.vectorStoreManager.onunload();
-    }
-
-    if (this.projectManager) {
-      this.projectManager.onunload();
-    }
-
-    this.customCommandRegister.cleanup();
-    this.settingsUnsubscriber?.();
-    this.autocompleteService?.destroy();
-
-    logInfo("Copilot plugin unloaded");
-  }
-
-  updateUserMessageHistory(newMessage: string) {
-    this.userMessageHistory = [...this.userMessageHistory, newMessage];
-  }
-
-  async autosaveCurrentChat() {
-    if (getSettings().autosaveChat) {
-      const chatView = this.app.workspace.getLeavesOfType(CHAT_VIEWTYPE)[0]?.view as CopilotView;
-      if (chatView) {
-        await chatView.saveChat();
-      }
-    }
-  }
-
-  async processText(
-    editor: Editor,
-    eventType: string,
-    eventSubtype?: string,
-    checkSelectedText = true
-  ) {
-    const selectedText = await editor.getSelection();
-
-    const isChatWindowActive = this.app.workspace.getLeavesOfType(CHAT_VIEWTYPE).length > 0;
-
-    if (!isChatWindowActive) {
-      await this.activateView();
-    }
-
-    // Without the timeout, the view is not yet active
-    setTimeout(() => {
-      const activeCopilotView = this.app.workspace
-        .getLeavesOfType(CHAT_VIEWTYPE)
-        .find((leaf) => leaf.view instanceof CopilotView)?.view as CopilotView;
-      if (activeCopilotView && (!checkSelectedText || selectedText)) {
-        const event = new CustomEvent(eventType, { detail: { selectedText, eventSubtype } });
-        activeCopilotView.eventTarget.dispatchEvent(event);
-      }
-    }, 0);
-  }
-
-  processSelection(editor: Editor, eventType: string, eventSubtype?: string) {
-    this.processText(editor, eventType, eventSubtype);
-  }
-
-  emitChatIsVisible() {
-    const activeCopilotView = this.app.workspace
-      .getLeavesOfType(CHAT_VIEWTYPE)
-      .find((leaf) => leaf.view instanceof CopilotView)?.view as CopilotView;
-
-    if (activeCopilotView) {
-      const event = new CustomEvent(EVENT_NAMES.CHAT_IS_VISIBLE);
-      activeCopilotView.eventTarget.dispatchEvent(event);
-    }
-  }
-
-  initActiveLeafChangeHandler() {
-    this.registerEvent(
-      this.app.workspace.on("active-leaf-change", (leaf) => {
-        if (!leaf) {
-          return;
-        }
-        if (leaf.getViewState().type === CHAT_VIEWTYPE) {
-          this.emitChatIsVisible();
-        }
-      })
-    );
-  }
-
-  private getCurrentEditorOrDummy(): Editor {
-    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-    return {
-      getSelection: () => {
-        const selection = activeView?.editor?.getSelection();
-        if (selection) return selection;
-        // Default to the entire active file if no selection
-        const activeFile = this.app.workspace.getActiveFile();
-        return activeFile ? this.app.vault.cachedRead(activeFile) : "";
-      },
-      replaceSelection: activeView?.editor?.replaceSelection.bind(activeView.editor) || (() => {}),
-    } as Partial<Editor> as Editor;
-  }
-
-  processCustomPrompt(eventType: string, customPrompt: string) {
-    const editor = this.getCurrentEditorOrDummy();
-    this.processText(editor, eventType, customPrompt, false);
-  }
-
-  toggleView() {
-    const leaves = this.app.workspace.getLeavesOfType(CHAT_VIEWTYPE);
-    if (leaves.length > 0) {
-      this.deactivateView();
-    } else {
-      this.activateView();
-    }
-  }
-
-  async activateView(): Promise<void> {
-    const leaves = this.app.workspace.getLeavesOfType(CHAT_VIEWTYPE);
-    if (leaves.length === 0) {
-      if (getSettings().defaultOpenArea === DEFAULT_OPEN_AREA.VIEW) {
-        await this.app.workspace.getRightLeaf(false).setViewState({
-          type: CHAT_VIEWTYPE,
-          active: true,
-        });
-      } else {
-        await this.app.workspace.getLeaf(true).setViewState({
-          type: CHAT_VIEWTYPE,
-          active: true,
-        });
-      }
-    } else {
-      this.app.workspace.revealLeaf(leaves[0]);
-    }
-    this.emitChatIsVisible();
-  }
-
-  async deactivateView() {
-    this.app.workspace.detachLeavesOfType(CHAT_VIEWTYPE);
+    console.log("Unloading Copilot Plugin");
   }
 
   async loadSettings() {
-    const savedSettings = await this.loadData();
-    const sanitizedSettings = sanitizeSettings(savedSettings);
-    setSettings(sanitizedSettings);
+    this.settings = Object.assign({}, getSettings(), await this.loadData());
   }
 
-  mergeActiveModels(
-    existingActiveModels: CustomModel[],
-    builtInModels: CustomModel[]
-  ): CustomModel[] {
-    const modelMap = new Map<string, CustomModel>();
+  async saveSettings() {
+    await this.saveData(this.settings);
+    setSettings(this.settings);
+    
+    // Update API client with new settings
+    if (this.apiClient) {
+      this.apiClient.updateSettings(this.settings);
+    }
+  }
 
-    // Create a unique key for each model, it's model (name + provider)
+  addCommands() {
+    // Open Chat Command
+    this.addCommand({
+      id: "open-chat",
+      name: "Open Chat",
+      callback: () => this.openChatView(),
+    });
 
-    // Add or update existing models in the map
-    existingActiveModels.forEach((model) => {
-      const key = getModelKeyFromModel(model);
-      const existingModel = modelMap.get(key);
-      if (existingModel) {
-        // If it's a built-in model, preserve the built-in status
-        modelMap.set(key, {
-          ...model,
-          isBuiltIn: existingModel.isBuiltIn || model.isBuiltIn,
-        });
-      } else {
-        modelMap.set(key, model);
+    // Upload Document Command
+    this.addCommand({
+      id: "upload-document",
+      name: "Upload Document",
+      callback: () => this.uploadDocument(),
+    });
+
+    // Test Connection Command
+    this.addCommand({
+      id: "test-connection",
+      name: "Test Server Connection",
+      callback: () => this.testConnection(),
+    });
+  }
+
+  async openChatView(): Promise<void> {
+    // TODO: Implement when chat view is ready
+    new Notice("Chat view coming soon! Use commands for now.");
+  }
+
+  async uploadDocument(): Promise<void> {
+    // Create file input
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".pdf";
+    input.multiple = false;
+
+    input.onchange = async (event) => {
+      const file = (event.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      try {
+        new Notice("Uploading document...");
+        
+        const result = await this.apiClient.uploadDocument(file);
+        
+        new Notice(`Document uploaded successfully: ${result.filename}`);
+      } catch (error) {
+        console.error("Upload failed:", error);
+        new Notice(`Upload failed: ${error.message}`);
       }
-    });
+    };
 
-    return Array.from(modelMap.values());
+    input.click();
   }
 
-  async loadCopilotChatHistory() {
-    const chatFiles = await this.getChatHistoryFiles();
-    if (chatFiles.length === 0) {
-      new Notice("No chat history found.");
-      return;
-    }
-    new LoadChatHistoryModal(this.app, chatFiles, this.loadChatHistory.bind(this)).open();
-  }
-
-  async getChatHistoryFiles(): Promise<TFile[]> {
-    const folder = this.app.vault.getAbstractFileByPath(getSettings().defaultSaveFolder);
-    if (!(folder instanceof TFolder)) {
-      return [];
-    }
-
-    const files = await this.app.vault.getMarkdownFiles();
-    const folderFiles = files.filter((file) => file.path.startsWith(folder.path));
-
-    // Get current project ID if in a project
-    const currentProject = getCurrentProject();
-    const currentProjectId = currentProject?.id;
-
-    if (currentProjectId) {
-      // In project mode: return only files with this project's ID prefix
-      const projectPrefix = `${currentProjectId}__`;
-      return folderFiles.filter((file) => file.basename.startsWith(projectPrefix));
-    } else {
-      // In non-project mode: return only files without any project ID prefix
-      // This assumes project IDs always use the format projectId__ as prefix
-      return folderFiles.filter((file) => {
-        // Check if the filename has any projectId__ prefix pattern
-        return !file.basename.match(/^[a-zA-Z0-9-]+__/);
-      });
+  async testConnection(): Promise<void> {
+    try {
+      new Notice("Testing server connection...");
+      
+      const health = await this.apiClient.healthCheck();
+      
+      if (health.status === "healthy") {
+        new Notice("✅ Server connection successful!");
+      } else {
+        new Notice("⚠️ Server responded but may have issues");
+      }
+    } catch (error) {
+      console.error("Connection test failed:", error);
+      new Notice(`❌ Connection failed: ${error.message}`);
     }
   }
 
-  async loadChatHistory(file: TFile) {
-    // First autosave the current chat if the setting is enabled
-    await this.autosaveCurrentChat();
-
-    const content = await this.app.vault.read(file);
-    const messages = parseChatContent(content);
-
-    // Check if the Copilot view is already active
-    const existingView = this.app.workspace.getLeavesOfType(CHAT_VIEWTYPE)[0];
-    if (!existingView) {
-      // Only activate the view if it's not already open
-      this.activateView();
-    }
-
-    // Load messages into ChatUIState (which now handles memory updates)
-    await this.chatUIState.loadMessages(messages);
-
-    // Update the view
-    const copilotView = (existingView || this.app.workspace.getLeavesOfType(CHAT_VIEWTYPE)[0])
-      ?.view as CopilotView;
-    if (copilotView) {
-      copilotView.updateView();
-    }
-  }
-
-  async handleNewChat() {
-    // First autosave the current chat if the setting is enabled
-    await this.autosaveCurrentChat();
-
-    // Abort any ongoing streams before clearing chat
-    const existingView = this.app.workspace.getLeavesOfType(CHAT_VIEWTYPE)[0];
-    if (existingView) {
-      const copilotView = existingView.view as CopilotView;
-      // Dispatch abort event to stop any ongoing streams
-      const abortEvent = new CustomEvent(EVENT_NAMES.ABORT_STREAM, {
-        detail: { reason: ABORT_REASON.NEW_CHAT },
-      });
-      copilotView.eventTarget.dispatchEvent(abortEvent);
-    }
-
-    // Clear messages through ChatUIState (which also clears chain memory)
-    this.chatUIState.clearMessages();
-
-    // Update view if it exists
-    if (existingView) {
-      const copilotView = existingView.view as CopilotView;
-      copilotView.updateView();
-    } else {
-      // If view doesn't exist, open it
-      await this.activateView();
-    }
-
-    // Note: UI-specific state like includeActiveNote setting is handled in the Chat component
-    // This ensures proper separation of concerns between plugin logic and UI state
-  }
-
-  async newChat() {
-    // Just delegate to the shared method
-    await this.handleNewChat();
-  }
-
-  async customSearchDB(query: string, salientTerms: string[], textWeight: number): Promise<any[]> {
-    const hybridRetriever = new HybridRetriever({
-      minSimilarityScore: 0.3,
-      maxK: 20,
-      salientTerms: salientTerms,
-      textWeight: textWeight,
-    });
-
-    const results = await hybridRetriever.getOramaChunks(query, salientTerms);
-    return results.map((doc) => ({
-      content: doc.pageContent,
-      metadata: doc.metadata,
-    }));
+  // Utility method for other components to access API client
+  getApiClient(): ApiClient {
+    return this.apiClient;
   }
 }

@@ -1,0 +1,208 @@
+/**
+ * Clean API Client - Only HTTP communication with inference server
+ */
+
+export interface ChatRequest {
+  message: string;
+  chat_id?: string;
+  stream?: boolean;
+}
+
+export interface ChatResponse {
+  message: string;
+  chat_id: string;
+  sources?: string[];
+}
+
+export interface UploadResponse {
+  success: boolean;
+  filename: string;
+  document_id: string;
+  message: string;
+}
+
+export interface HealthResponse {
+  status: string;
+  timestamp: string;
+  version?: string;
+}
+
+export interface SearchRequest {
+  query: string;
+  limit?: number;
+}
+
+export interface SearchResult {
+  content: string;
+  source: string;
+  score: number;
+}
+
+export interface DocumentInfo {
+  id: string;
+  filename: string;
+  uploaded_at: string;
+  chunks: number;
+}
+
+export class ApiClient {
+  private baseUrl: string;
+  private timeout: number;
+
+  constructor(settings: any) {
+    this.baseUrl = settings.serverUrl || 'http://localhost:8000';
+    this.timeout = settings.timeout || 30000;
+  }
+
+  updateSettings(settings: any) {
+    this.baseUrl = settings.serverUrl || 'http://localhost:8000';
+    this.timeout = settings.timeout || 30000;
+  }
+
+  // Health check
+  async healthCheck(): Promise<HealthResponse> {
+    const response = await fetch(`${this.baseUrl}/api/v1/health`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Health check failed: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  // Upload document
+  async uploadDocument(file: File): Promise<UploadResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${this.baseUrl}/api/v1/process`, {
+      method: 'POST',
+      body: formData,
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Upload failed: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  // Chat with documents
+  async chat(request: ChatRequest): Promise<ChatResponse> {
+    const response = await fetch(`${this.baseUrl}/api/v1/obsidian/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Chat failed: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  // Streaming chat
+  async *chatStream(request: ChatRequest): AsyncGenerator<string, void, unknown> {
+    const response = await fetch(`${this.baseUrl}/api/v1/obsidian/chat/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ ...request, stream: true }),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Streaming chat failed: ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') return;
+            
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.content) {
+                yield parsed.content;
+              }
+            } catch (e) {
+              // Skip invalid JSON
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  // Search documents
+  async search(request: SearchRequest): Promise<SearchResult[]> {
+    const response = await fetch(`${this.baseUrl}/api/v1/obsidian/search`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Search failed: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  // List documents
+  async getDocuments(): Promise<DocumentInfo[]> {
+    const response = await fetch(`${this.baseUrl}/api/v1/obsidian/documents`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to get documents: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  // Delete document
+  async deleteDocument(documentId: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/api/v1/obsidian/documents/${documentId}`, {
+      method: 'DELETE',
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to delete document: ${response.status}`);
+    }
+  }
+}
