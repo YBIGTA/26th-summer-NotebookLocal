@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Builds / dists
+build/
+dist/
+
+# Packaging metadata
+*.egg-info/
+*.egg
+sdist/
+
+# Environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS junk
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime / Cache
+.cache/
+.parcel-cache/
+.pytest_cache/
+.mypy_cache/
+.tox/
+.nox/
+.ipynb_checkpoints/
+coverage/
+htmlcov/
+.triton/
+
+# Temporary
+tmp/
+temp/
+
+# TypeScript
+*.tsbuildinfo
+
+# Node
+node_modules/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# vLLM / models (pick one pattern)
+modular_model/models/*
+# !modular_model/models/.gitkeep

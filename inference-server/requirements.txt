@@ -1,0 +1,16 @@
+weaviate-client>=4.6.0
+openai>=1.0.0
+langchain
+langchain-community
+langchain-openai 
+langgraph
+pdfplumber
+PyPDF2
+pymupdf
+Pillow
+chromadb
+fastapi
+uvicorn
+numpy
+python-dotenv
+python-multipart

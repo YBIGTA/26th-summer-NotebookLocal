@@ -1,0 +1,54 @@
+# Anthropic Claude models configuration
+name: anthropic
+model_id: claude-3-5-sonnet-20241022
+default_model: claude-3-5-sonnet-20241022
+
+# Model parameters
+temperature: 0.7
+max_tokens: 4096
+top_p: 1.0
+
+# API settings
+timeout: 60
+max_retries: 2
+
+# Available models
+models:
+  - claude-3-5-sonnet-20241022
+  - claude-3-5-haiku-20241022
+  - claude-3-opus-20240229
+  - claude-3-sonnet-20240229
+  - claude-3-haiku-20240307
+
+# Capabilities
+capabilities:
+  vision: true
+  function_calling: false
+  streaming: true
+  reasoning: true
+
+# Context windows
+context_windows:
+  claude-3-opus-20240229: 200000
+  claude-3-5-sonnet-20241022: 200000
+  claude-3-sonnet-20240229: 200000
+  claude-3-5-haiku-20241022: 200000
+  claude-3-haiku-20240307: 200000
+
+# Cost per 1K tokens (USD)
+pricing:
+  claude-3-opus-20240229:
+    input: 0.015
+    output: 0.075
+  claude-3-5-sonnet-20241022:
+    input: 0.003
+    output: 0.015
+  claude-3-sonnet-20240229:
+    input: 0.003
+    output: 0.015
+  claude-3-5-haiku-20241022:
+    input: 0.00025
+    output: 0.00125
+  claude-3-haiku-20240307:
+    input: 0.00025
+    output: 0.00125
