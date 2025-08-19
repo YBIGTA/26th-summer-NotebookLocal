@@ -1,6 +1,6 @@
 // Minimal constants for clean plugin
-export const CHAT_VIEWTYPE = "copilot-chat-view";
-export const PLUGIN_NAME = "Copilot";
+export const CHAT_VIEWTYPE = "notebook-local-chat-view";
+export const PLUGIN_NAME = "NotebookLocal";
 
 // Default settings
 export const DEFAULT_SETTINGS = {

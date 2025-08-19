@@ -1,16 +1,17 @@
 // Clean Obsidian Plugin - HTTP Client Only
 import { Plugin, WorkspaceLeaf, Notice } from "obsidian";
-import { ApiClient } from "./api/ApiClient";
-import { getSettings, setSettings } from "./settings/model";
+import { ApiClient } from "./api/ApiClient-clean";
+import { getSettings, setSettings } from "./settings/model-clean";
 import { CHAT_VIEWTYPE } from "./constants-minimal";
+import NotebookLocalView from "./components/NotebookLocalView";
 
-export default class CopilotPlugin extends Plugin {
+export default class NotebookLocalPlugin extends Plugin {
   // Core components
   apiClient: ApiClient;
   settings: any;
 
   async onload() {
-    console.log("Loading Obsidian Copilot Plugin");
+    console.log("Loading NotebookLocal Plugin");
 
     // Load settings
     await this.loadSettings();
@@ -18,8 +19,8 @@ export default class CopilotPlugin extends Plugin {
     // Initialize API client
     this.apiClient = new ApiClient(this.settings);
 
-    // TODO: Register views when UI components are ready
-    // this.registerView(CHAT_VIEWTYPE, (leaf) => new CopilotView(leaf, this));
+    // Register chat view
+    this.registerView(CHAT_VIEWTYPE, (leaf) => new NotebookLocalView(leaf, this));
 
     // TODO: Add settings tab when settings UI is ready
     // this.addSettingTab(new CopilotSettingTab(this.app, this));
@@ -28,15 +29,15 @@ export default class CopilotPlugin extends Plugin {
     this.addCommands();
 
     // Add ribbon icon
-    this.addRibbonIcon("message-circle", "Open Copilot Chat", () => {
+    this.addRibbonIcon("message-circle", "Open NotebookLocal Chat", () => {
       this.openChatView();
     });
 
-    console.log("Copilot Plugin loaded successfully");
+    console.log("NotebookLocal Plugin loaded successfully");
   }
 
   async onunload() {
-    console.log("Unloading Copilot Plugin");
+    console.log("Unloading NotebookLocal Plugin");
   }
 
   async loadSettings() {
@@ -57,28 +58,43 @@ export default class CopilotPlugin extends Plugin {
     // Open Chat Command
     this.addCommand({
       id: "open-chat",
-      name: "Open Chat",
+      name: "NotebookLocal: Open Chat",
       callback: () => this.openChatView(),
     });
 
     // Upload Document Command
     this.addCommand({
       id: "upload-document",
-      name: "Upload Document",
+      name: "NotebookLocal: Upload Korean PDF",
       callback: () => this.uploadDocument(),
     });
 
     // Test Connection Command
     this.addCommand({
       id: "test-connection",
-      name: "Test Server Connection",
+      name: "NotebookLocal: Test Server Connection",
       callback: () => this.testConnection(),
     });
   }
 
   async openChatView(): Promise<void> {
-    // TODO: Implement when chat view is ready
-    new Notice("Chat view coming soon! Use commands for now.");
+    // Check if chat view is already open
+    const existing = this.app.workspace.getLeavesOfType(CHAT_VIEWTYPE);
+    if (existing.length > 0) {
+      // Focus existing view
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+
+    // Create new chat view in right sidebar
+    const leaf = this.app.workspace.getRightLeaf(false);
+    await leaf.setViewState({
+      type: CHAT_VIEWTYPE,
+      active: true,
+    });
+
+    // Reveal the new leaf
+    this.app.workspace.revealLeaf(leaf);
   }
 
   async uploadDocument(): Promise<void> {

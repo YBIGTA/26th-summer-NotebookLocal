@@ -1,32 +1,35 @@
-"""Question answering workflow using LangChain and LangGraph."""
+"""Question answering workflow using LangChain and LangGraph with modular LLM routing."""
 
 from typing import Dict, Union
+import asyncio
 
 from langgraph.graph import END, StateGraph
 
-from config import OPENAI_API_KEY, LLM_MODEL
 from ..processors.embedder import Embedder
 from ..storage.vector_store import SimpleVectorStore, WeaviateVectorStore
-
-# As with the embeddings, try to import the ChatOpenAI wrapper from the modern
-# package name but fall back to the legacy location for compatibility.
-try:  # pragma: no cover - exercised in tests via patching
-    from langchain_openai import ChatOpenAI
-except Exception:  # pragma: no cover
-    from langchain.chat_models import ChatOpenAI  # type: ignore
+from ..llm.core.router import LLMRouter
+from ..llm.models.requests import ChatRequest, Message
+from ..llm.models.responses import ChatResponse
 
 
 class QAWorkflow:
-    """Simple retrieval-augmented question answering workflow."""
+    """Simple retrieval-augmented question answering workflow with modular LLM routing."""
 
     def __init__(
         self,
         store: Union[SimpleVectorStore, WeaviateVectorStore],
         embedder: Embedder | None = None,
+        llm_router: LLMRouter | None = None,
     ) -> None:
         self.store = store
         self.embedder = embedder or Embedder()
-        self.llm = ChatOpenAI(model=LLM_MODEL, openai_api_key=OPENAI_API_KEY)
+        
+        # Initialize LLM router or fallback to None
+        try:
+            self.llm_router = llm_router or LLMRouter()
+        except Exception as e:
+            print(f"Warning: Failed to initialize LLM router: {e}")
+            self.llm_router = None
 
         workflow = StateGraph(dict)
         workflow.add_node("retrieve", self._retrieve)
@@ -49,12 +52,41 @@ class QAWorkflow:
 
     # ------------------------------------------------------------------
     def _generate(self, state: Dict) -> Dict:
-        prompt = (
-            "Answer the question based on the context below.\nContext:\n"
-            f"{state['context']}\n\nQuestion: {state['question']}"
-        )
-        response = self.llm.invoke(prompt)
-        state["answer"] = getattr(response, "content", str(response))
+        if not self.llm_router:
+            state["answer"] = "Error: LLM router not available"
+            return state
+        
+        try:
+            # Create OpenAI-compatible request
+            messages = [
+                Message(
+                    role="system", 
+                    content="Answer the question based on the provided context. If the question is in Korean, respond in Korean."
+                ),
+                Message(
+                    role="user", 
+                    content=f"Context:\n{state['context']}\n\nQuestion: {state['question']}"
+                )
+            ]
+            
+            request = ChatRequest(
+                messages=messages,
+                temperature=0.7,
+                max_tokens=2048
+            )
+            
+            # Use asyncio to run the async LLM router
+            response = asyncio.run(self.llm_router.route(request))
+            
+            if response.choices and len(response.choices) > 0:
+                state["answer"] = response.choices[0].message.content
+            else:
+                state["answer"] = "Error: No response from LLM"
+                
+        except Exception as e:
+            print(f"Error in LLM generation: {e}")
+            state["answer"] = f"Error: {str(e)}"
+            
         return state
 
     # ------------------------------------------------------------------
