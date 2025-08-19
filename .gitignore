@@ -76,5 +76,5 @@ node_modules/
 .ipynb_checkpoints/
 
 # vLLM / models (pick one pattern)
-modular_model/models/*
+inference-server/models/*
 # !modular_model/models/.gitkeep
