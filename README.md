@@ -1,103 +1,215 @@
-# RAG Search Pipeline
+# NotebookLocal - Multi-Modal RAG System
 
-## Overview
+## What We've Built
 
-A dual-component RAG (Retrieval-Augmented Generation) system consisting of:
-- **Inference Server**: A FastAPI-based backend for document processing and Q&A
-- **Obsidian Plugin**: A frontend interface that integrates directly with Obsidian
+A comprehensive **multi-modal RAG (Retrieval-Augmented Generation) system** with three integrated components:
 
-This architecture separates the AI processing from the user interface, allowing the inference server to be used standalone or with multiple frontend clients.
+### 🎯 **Core Components**
+- **📡 Inference Server**: FastAPI backend for document processing and Q&A
+- **🤖 Modular Model Router**: Unified API gateway for multiple LLM providers (OpenAI, Anthropic, Qwen, vLLM)
+- **📝 Obsidian Plugin**: Native frontend interface within Obsidian
+
+## What We're Trying To Do
+
+### 🎯 **Primary Goals**
+1. **🇰🇷 Korean PDF Support**: Advanced document processing for Korean academic/technical documents
+2. **🔄 Multi-Modal AI**: Combine text, images, and diagrams for comprehensive understanding
+3. **🚀 Flexible LLM Access**: Support both cloud APIs and local models through unified interface
+4. **📚 Knowledge Management**: Seamless integration with personal note-taking workflows
+
+### 🎯 **Vision**
+Create a **notebook-local AI assistant** that:
+- Processes complex Korean documents (PDFs with mixed text/images)
+- Provides contextual Q&A based on uploaded content
+- Integrates naturally into existing knowledge workflows
+- Supports both cloud and local AI models for flexibility
 
 ## System Architecture
 
-### Component Interaction
+## How We're Building It
+
+### 🏗️ **Three-Tier Architecture**
 
 ```
-┌─────────────────────────────────────┐     ┌──────────────────────────────────┐
-│           Obsidian Plugin           │────▶│        Inference Server          │a
-│                                     │     │                                  │
-│  ┌─────────────────────────────────┐│     │  ┌─────────────────────────────┐ │
-│  │        User Interface           ││     │  │      FastAPI Backend       │ │
-│  │  • Document Upload              ││     │  │  • PDF Processing          │ │
-│  │  • Chat Interface               ││ HTTP│  │  • Vector Storage           │ │
-│  │  • Settings Management          ││     │  │  • LLM Integration          │ │
-│  │  • Search & Navigation          ││     │  │  • API Endpoints            │ │
-│  └─────────────────────────────────┘│     │  └─────────────────────────────┘ │
-│                                     │     │                                  │
-│  ┌─────────────────────────────────┐│     │  ┌─────────────────────────────┐ │
-│  │       API Integration           ││     │  │     AI Processing Stack     │ │
-│  │  • ApiClient for communication  ││     │  │  • OpenAI GPT-4o mini      │ │
-│  │  • Stream handling              ││     │  │  • text-embedding-3-large  │ │
-│  │  • Error management             ││     │  │  • LangChain workflows      │ │
-│  │  • Authentication               ││     │  │  • Vector database          │ │
-│  └─────────────────────────────────┘│     │  └─────────────────────────────┘ │
-└─────────────────────────────────────┘     └──────────────────────────────────┘
-            Runs within Obsidian                    Standalone Python server
+┌─────────────────────────────────────┐
+│           Obsidian Plugin           │
+│         (User Interface)            │
+│  • Korean document upload          │
+│  • Multi-modal chat interface      │  
+│  • Real-time streaming responses   │
+│  • Integrated note management      │
+└─────────────────┬───────────────────┘
+                  │ HTTP API
+                  ▼
+┌─────────────────────────────────────┐
+│          Inference Server           │
+│       (Document Processing)         │
+│  • Korean PDF text extraction      │
+│  • Image/diagram processing        │
+│  • Vector embedding generation     │
+│  • RAG pipeline orchestration      │
+└─────────────────┬───────────────────┘
+                  │ Model API
+                  ▼
+┌─────────────────────────────────────┐
+│        Modular Model Router         │
+│         (AI Model Gateway)          │
+│  • OpenAI/Anthropic (Cloud)        │
+│  • Qwen-VL (Local Vision)          │
+│  • vLLM (Local Text)               │
+│  • Adaptive model routing          │
+└─────────────────────────────────────┘
 ```
 
-### Communication Flow
+### 🔄 **Technical Implementation Strategy**
 
-1. **Plugin → Server**: HTTP requests to inference server API endpoints
-2. **Server Processing**: Document analysis, embedding generation, vector storage
-3. **Server → Plugin**: JSON responses with results, sources, and metadata
-4. **Plugin UI**: Renders responses within Obsidian interface
+#### **1. Korean Document Processing**
+- **PyMuPDF**: Superior Korean font handling vs. pdfplumber
+- **Multi-modal extraction**: Text + images + diagrams from PDFs
+- **GPT-4V integration**: AI-generated descriptions for visual content
+- **Semantic chunking**: Context-aware text segmentation
 
-### Technology Stack
+#### **2. Flexible AI Backend**
+- **Model abstraction**: Unified interface for different AI providers
+- **Local + Cloud**: Support both self-hosted and API-based models
+- **Vision capabilities**: Qwen2.5-VL for local image understanding
+- **Performance optimization**: vLLM for fast local inference
 
-#### Inference Server (`inference-server/`)
-- **Framework**: FastAPI for high-performance API server
-- **AI Models**: OpenAI GPT-4o mini, text-embedding-3-large
-- **Orchestration**: LangChain + LangGraph workflows
-- **Vector Storage**: Weaviate for similarity search
-- **Document Processing**: PDF parsing, image extraction, OCR
+#### **3. Seamless User Experience**
+- **Native Obsidian integration**: Works within existing workflows
+- **Real-time streaming**: Progressive response generation
+- **Smart caching**: Minimize API calls and processing time
+- **Error resilience**: Graceful fallbacks between model providers
 
-#### Obsidian Plugin (`obsidian-plugin/`)
-- **Framework**: TypeScript Obsidian plugin architecture
-- **UI Components**: React with custom components
-- **Styling**: Tailwind CSS for responsive design
-- **Build System**: esbuild for fast compilation
-- **API Communication**: Custom ApiClient for server interaction
+## Current Development Status
 
-## System Workflow
+### ✅ **Completed Components**
+
+#### 📡 **Inference Server**
+- ✅ FastAPI backend with Korean PDF processing
+- ✅ PyMuPDF integration for better Korean font support
+- ✅ Multi-modal content extraction (text + images)
+- ✅ OpenAI integration (GPT-4o, text-embedding-3-large)
+- ✅ Vector storage with Weaviate
+- ✅ RESTful API endpoints for document processing
+
+#### 🤖 **Modular Model Router** 
+- ✅ Unified API gateway architecture
+- ✅ Multiple provider support (OpenAI, Anthropic, Qwen)
+- ✅ Local model integration (vLLM, Qwen-VL)
+- ✅ Configuration-driven routing
+- ✅ Async request handling
+
+#### 📝 **Obsidian Plugin**
+- ✅ TypeScript plugin architecture
+- ✅ React-based UI components
+- ✅ Real-time chat interface
+- ✅ Document management system
+- ✅ Settings configuration panel
+
+### 🚧 **Technology Stack**
+
+#### **Backend (Python)**
+- **FastAPI**: High-performance async API server
+- **LangChain/LangGraph**: AI workflow orchestration  
+- **PyMuPDF**: Korean PDF text extraction
+- **Weaviate**: Vector similarity search
+- **vLLM**: Local model serving
+- **Transformers**: Qwen model integration
+
+#### **Frontend (TypeScript)**
+- **Obsidian API**: Native plugin integration
+- **React + TypeScript**: Component architecture
+- **Tailwind CSS**: Responsive UI design
+- **esbuild**: Fast compilation pipeline
+
+## Next Steps & Testing
+
+### 🎯 **Immediate Goals**
+1. **End-to-end testing**: Verify complete workflow functionality
+2. **Korean document validation**: Test with real Korean academic PDFs
+3. **Performance optimization**: Latency and memory usage improvements
+4. **Integration polish**: Smooth user experience across components
+
+### 📋 **Testing Checklist**
+- [ ] Obsidian plugin builds and loads correctly
+- [ ] Inference server processes Korean PDFs successfully  
+- [ ] Model router switches between providers seamlessly
+- [ ] Complete document → query → response workflow
+- [ ] Multi-modal content (text + images) processing
+- [ ] Real-time streaming responses
+
+### 🔄 **Processing Pipeline**
 
 ```mermaid
 graph TD
-    A[PDF Input] --> B[PDF Processing & OCR]
-    B --> C{Content Detection}
-    C -->|Text| D[Text Extraction]
-    C -->|Images/Diagrams| E[Image Extraction]
-    E --> F[GPT-4V Description]
-    D --> G[Text Chunking]
+    A[Korean PDF Upload] --> B[PyMuPDF Extraction]
+    B --> C{Content Analysis}
+    C -->|Text| D[Korean Text Processing]
+    C -->|Images| E[Image Extraction]
+    E --> F[Qwen-VL Description]
+    D --> G[Semantic Chunking]
     F --> G
-    G --> H[OpenAI Embeddings]
-    H --> I[Weaviate Vector Store]
-    I --> J[RAG Setup Complete]
+    G --> H[Embedding Generation]
+    H --> I[Vector Storage]
+    I --> J[RAG Index Ready]
     J --> K[User Query]
-    K --> L[Vector Search]
-    L --> M[GPT-4 Response]
+    K --> L[Similarity Search]
+    L --> M[Context Assembly]
+    M --> N[LLM Response Generation]
+    N --> O[Streamed Response]
 ```
 
-## Processing Pipeline
+## Getting Started
 
-### 1. Document Ingestion
-- PDF upload and validation
-- OCR processing with pdfplumber/PyPDF2
-- Image extraction and preprocessing
+### 🚀 **Quick Setup Guide**
 
-### 2. Content Processing
-- **Text**: Extract and clean text content
-- **Images**: Use GPT-4o mini to generate detailed descriptions of diagrams, charts, figures
-- **Integration**: Combine text and image descriptions with proper context
+#### 1. **Environment Setup**
+```bash
+# Ensure Python 3.12 is installed
+python3 --version  # Should be 3.12.x
 
-### 3. Embedding & Storage
-- Chunk text into semantic segments
-- Generate embeddings using OpenAI's text-embedding-3-large
-- Store in Weaviate vector database with metadata
+# Clone and navigate
+git clone <repository>
+cd 26th-summer-NotebookLocal/
+```
 
-### 4. Q&A System
-- Process user queries
-- Retrieve relevant chunks via similarity search
-- Generate responses using LLM with retrieved context
+#### 2. **Start Model Router** (Optional - for local models)
+```bash
+cd modular_model/
+python -m venv venv && source venv/bin/activate
+pip install -e .
+python src/main.py  # Starts on port 8001
+```
+
+#### 3. **Start Inference Server**
+```bash
+cd inference-server/
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+
+# Configure environment
+cp .env.example .env
+# Edit .env: Add your OPENAI_API_KEY
+
+# Start server
+uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+#### 4. **Install Obsidian Plugin**
+```bash
+cd obsidian-plugin/
+npm install && npm run build
+
+# Copy to Obsidian plugins directory
+mkdir -p ~/.obsidian/plugins/obsidian-copilot/
+cp main.js manifest.json styles.css ~/.obsidian/plugins/obsidian-copilot/
+
+# Enable in Obsidian: Settings → Community Plugins → Enable "Obsidian Copilot"
+```
+
+### 🧪 **Testing the System**
+See [`TESTING_GUIDE.md`](./TESTING_GUIDE.md) for comprehensive testing instructions.
 
 ## Project Structure
 
@@ -135,70 +247,56 @@ rag-search-pipeline/
         └── utils/                    # Plugin utilities
 ```
 
-## Getting Started
+## Key Features & Differentiators
 
-### Quick Setup
+### 🇰🇷 **Korean Document Excellence**
+- **Advanced font handling**: PyMuPDF > pdfplumber for Korean text
+- **Multi-modal processing**: Text + images + diagrams in single workflow
+- **Academic PDF focus**: Optimized for Korean research/technical documents
 
-1. **Start the Inference Server**
-   ```bash
-   cd inference-server/
-   # See inference-server/README.md for detailed setup
-   uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
-   ```
+### 🤖 **Flexible AI Architecture**
+- **Multi-provider support**: Switch between OpenAI, Anthropic, local models
+- **Local model integration**: Qwen-VL for vision, vLLM for fast inference
+- **Cost optimization**: Route queries to most appropriate model
 
-2. **Install the Obsidian Plugin**
-   ```bash
-   cd obsidian-plugin/
-   # See obsidian-plugin/README.md for installation guide
-   npm install && npm run build
-   # Then copy to your Obsidian plugins directory
-   ```
+### 📝 **Native Workflow Integration**
+- **Obsidian-first design**: Works within existing note-taking habits
+- **Real-time streaming**: Progressive response generation
+- **Source transparency**: Clear document references for every response
 
-3. **Configure Connection**
-   - Open Obsidian settings
-   - Navigate to the RAG Search Plugin settings
-   - Set server URL to `http://localhost:8000`
+## Component Details
 
-### Usage Flow
+### 📡 **Inference Server Features**
+- Korean PDF processing with PyMuPDF
+- Multi-modal content extraction (text + images)
+- Vector storage with Weaviate
+- LangChain workflow orchestration
+- RESTful API endpoints
 
-1. **Upload Documents**: Use the plugin to upload PDF documents to the server
-2. **Processing**: Server extracts text, images, generates embeddings
-3. **Query**: Ask questions through the plugin interface
-4. **Results**: Get AI-generated answers with source references
+### 🤖 **Model Router Features**
+- Unified API for multiple providers
+- Local model serving (Qwen, vLLM)
+- Configuration-driven routing
+- Async request handling
 
-## Key Features
+### 📝 **Obsidian Plugin Features**
+- Native Obsidian integration
+- Real-time chat interface
+- Document management system
+- Settings configuration
+- Source reference tracking
 
-### Inference Server
-- **Document Processing**: PDF parsing, image extraction, text chunking
-- **AI Integration**: OpenAI GPT-4o mini for reasoning and embeddings
-- **Vector Storage**: Weaviate for similarity search and retrieval
-- **API Endpoints**: RESTful API for document upload, processing, and querying
-- **Workflow Orchestration**: LangChain/LangGraph for complex processing pipelines
+---
 
-### Obsidian Plugin
-- **Native Integration**: Works seamlessly within Obsidian interface
-- **Document Management**: Upload and manage PDF documents
-- **Interactive Chat**: Real-time Q&A with processed documents
-- **Settings Interface**: Configure server connection and plugin options
-- **Source References**: View document sources for generated answers
+## Development Team & Contact
 
-## Development
+**Built for the 26th Summer Research Program**
+- Multi-modal RAG system for Korean academic document processing
+- Local + cloud AI model integration
+- Obsidian workflow optimization
 
-Each component has its own development environment and build process:
-
-- **Inference Server**: Python-based with FastAPI and AI libraries
-- **Obsidian Plugin**: TypeScript with React components and esbuild
-
-See individual README files for detailed setup and development instructions.
-
-## Architecture Benefits
-
-1. **Separation of Concerns**: AI processing isolated from UI
-2. **Scalability**: Server can handle multiple clients
-3. **Flexibility**: Plugin can be used with different servers
-4. **Development**: Independent development cycles for frontend/backend
-5. **Deployment**: Server can run on different infrastructure
-
-For detailed setup instructions, see:
-- [`inference-server/README.md`](./inference-server/README.md) - Server setup and API documentation
-- [`obsidian-plugin/README.md`](./obsidian-plugin/README.md) - Plugin installation and usage
+For detailed setup and testing instructions, see:
+- [`TESTING_GUIDE.md`](./TESTING_GUIDE.md) - Comprehensive testing procedures
+- [`inference-server/README.md`](./inference-server/README.md) - Server setup and API docs
+- [`obsidian-plugin/README.md`](./obsidian-plugin/README.md) - Plugin installation guide
+- [`modular_model/README.md`](./modular_model/README.md) - Model router documentation
