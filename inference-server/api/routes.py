@@ -8,8 +8,12 @@ import json
 import asyncio
 import uuid
 import time
+import logging
+import traceback
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 from src.main import LectureProcessor
 from src.llm.core.router import LLMRouter
@@ -92,31 +96,58 @@ class IndexStatus(BaseModel):
 @router.post("/process", response_model=ProcessResponse)
 async def process_file(file: UploadFile = File(...)):
     """Process a PDF file and store it in the vector database."""
+    request_id = str(uuid.uuid4())[:8]
+    start_time = time.time()
+    
+    logger.info(f"🌐 API REQUEST [{request_id}]: /process - PDF upload started")
+    logger.info(f"   📁 Filename: {file.filename if file else 'None'}")
+    
     if not file or not file.filename:
+        logger.error(f"❌ API ERROR [{request_id}]: No file uploaded")
         raise HTTPException(status_code=400, detail="No file uploaded")
 
     filename = file.filename
+    logger.info(f"   📄 File size: {file.size if hasattr(file, 'size') else 'Unknown'} bytes")
+    
     if not filename.lower().endswith(".pdf"):
+        logger.error(f"❌ API ERROR [{request_id}]: Invalid file type - {filename}")
         raise HTTPException(status_code=400, detail="Invalid file type. Only PDFs are supported.")
 
     try:
+        # Read file contents
+        logger.info(f"📥 [{request_id}]: Reading uploaded file...")
         contents = await file.read()
+        
         if not contents:
+            logger.error(f"❌ API ERROR [{request_id}]: Uploaded file is empty")
             raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
+        logger.info(f"✅ [{request_id}]: File read successfully - {len(contents):,} bytes")
+
+        # Create temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix=Path(filename).suffix) as tmp:
             tmp.write(contents)
             temp_path = tmp.name
             
+        logger.info(f"💾 [{request_id}]: Temporary file created: {temp_path}")
+        
         # Process the document
+        logger.info(f"⚙️  [{request_id}]: Starting document processing...")
         result = processor.process_document(temp_path)
         
         # Clean up temporary file
         os.unlink(temp_path)
+        logger.info(f"🧹 [{request_id}]: Temporary file cleaned up")
+        
+        # Log final results
+        processing_time = time.time() - start_time
+        logger.info(f"🎉 API SUCCESS [{request_id}]: Processing completed")
+        logger.info(f"   📊 Result: {result}")
+        logger.info(f"   ⏱️  Total API time: {processing_time:.2f}s")
         
         return ProcessResponse(
             filename=filename,
-            chunks=result["chunks"],
+            chunks=result.get("chunks", 0),
             images=result["images"],
             status="success"
         )
@@ -471,3 +502,148 @@ async def rebuild_obsidian_index():
         return {"status": "rebuilding", "message": "Index rebuild started"}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to rebuild index: {str(exc)}") from exc
+
+
+# Debug endpoints for monitoring and troubleshooting
+@router.get("/debug/health-detailed")
+async def debug_health_detailed():
+    """Get detailed system health information"""
+    logger.info("🔍 DEBUG: Detailed health check requested")
+    
+    try:
+        from src.storage.hybrid_store import HybridStore
+        
+        health_info = {
+            "timestamp": datetime.now().isoformat(),
+            "system_status": "healthy",
+            "components": {}
+        }
+        
+        # Check database connection
+        try:
+            if isinstance(processor.store, HybridStore):
+                documents = processor.store.get_documents(limit=1)
+                health_info["components"]["postgresql"] = {
+                    "status": "connected",
+                    "can_query": True,
+                    "sample_query_success": True
+                }
+            else:
+                health_info["components"]["postgresql"] = {
+                    "status": "not_used",
+                    "message": "Using vector store only"
+                }
+        except Exception as e:
+            health_info["components"]["postgresql"] = {
+                "status": "error",
+                "error": str(e)
+            }
+            health_info["system_status"] = "degraded"
+        
+        # Check vector store
+        try:
+            # This is a simple check - we'll add more specific Weaviate checks later
+            health_info["components"]["vector_store"] = {
+                "status": "available",
+                "type": type(processor.store).__name__
+            }
+        except Exception as e:
+            health_info["components"]["vector_store"] = {
+                "status": "error",
+                "error": str(e)
+            }
+            health_info["system_status"] = "degraded"
+        
+        # Check LLM router
+        try:
+            if llm_router:
+                health_info["components"]["llm_router"] = {
+                    "status": "available",
+                    "adapters_count": len(llm_router._adapters) if hasattr(llm_router, '_adapters') else 0
+                }
+            else:
+                health_info["components"]["llm_router"] = {
+                    "status": "not_initialized",
+                    "message": "LLM router failed to initialize"
+                }
+        except Exception as e:
+            health_info["components"]["llm_router"] = {
+                "status": "error", 
+                "error": str(e)
+            }
+        
+        logger.info(f"✅ DEBUG: Health check completed - Status: {health_info['system_status']}")
+        return health_info
+        
+    except Exception as e:
+        logger.error(f"❌ DEBUG: Health check failed: {str(e)}")
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "system_status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
+@router.get("/debug/db-stats")
+async def debug_db_stats():
+    """Get detailed database statistics"""
+    logger.info("🔍 DEBUG: Database stats requested")
+    
+    try:
+        from src.storage.hybrid_store import HybridStore
+        
+        if not isinstance(processor.store, HybridStore):
+            return {"error": "Database stats only available for hybrid store"}
+        
+        # Get document statistics
+        documents = processor.store.get_documents(limit=1000)
+        
+        stats = {
+            "timestamp": datetime.now().isoformat(),
+            "total_documents": len(documents),
+            "total_chunks": 0,
+            "documents_by_type": {},
+            "recent_documents": [],
+            "chunk_size_distribution": {"small": 0, "medium": 0, "large": 0}
+        }
+        
+        for doc in documents:
+            # Count chunks
+            chunk_count = doc.get("chunk_count", 0)
+            stats["total_chunks"] += chunk_count
+            
+            # Group by source type
+            source_type = doc.get("source_type", "unknown")
+            stats["documents_by_type"][source_type] = stats["documents_by_type"].get(source_type, 0) + 1
+            
+            # Classify document size
+            if chunk_count < 5:
+                stats["chunk_size_distribution"]["small"] += 1
+            elif chunk_count < 20:
+                stats["chunk_size_distribution"]["medium"] += 1
+            else:
+                stats["chunk_size_distribution"]["large"] += 1
+        
+        # Get 5 most recent documents
+        if documents:
+            sorted_docs = sorted(documents, key=lambda d: d.get("ingested_at", ""), reverse=True)
+            stats["recent_documents"] = [
+                {
+                    "title": doc.get("title", "Untitled"),
+                    "source_type": doc.get("source_type", "unknown"),
+                    "chunks": doc.get("chunk_count", 0),
+                    "ingested_at": doc.get("ingested_at", "unknown")
+                }
+                for doc in sorted_docs[:5]
+            ]
+        
+        logger.info(f"✅ DEBUG: Database stats retrieved - {stats['total_documents']} documents, {stats['total_chunks']} chunks")
+        return stats
+        
+    except Exception as e:
+        logger.error(f"❌ DEBUG: Database stats failed: {str(e)}")
+        return {
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }

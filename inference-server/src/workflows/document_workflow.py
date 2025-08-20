@@ -2,6 +2,9 @@
 
 from typing import Dict, Union
 from pathlib import Path
+import logging
+import time
+import traceback
 
 from langgraph.graph import END, StateGraph
 
@@ -11,6 +14,8 @@ from ..processors.text_processor import TextProcessor
 from ..processors.embedder import Embedder
 from ..storage.vector_store import SimpleVectorStore, WeaviateVectorStore
 from ..storage.hybrid_store import HybridStore
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentWorkflow:
@@ -40,48 +45,191 @@ class DocumentWorkflow:
 
     # ------------------------------------------------------------------
     def _extract(self, state: Dict) -> Dict:
-        text, images = self.pdf_processor.extract(state["pdf_path"])
-        state.update({"text": text, "images": images})
-        return state
+        """Step 1: Extract text and images from PDF"""
+        start_time = time.time()
+        pdf_path = state["pdf_path"]
+        
+        logger.info(f"🔍 STEP 1: Starting PDF extraction for: {pdf_path}")
+        logger.info(f"📄 File size: {Path(pdf_path).stat().st_size / 1024 / 1024:.2f} MB")
+        
+        try:
+            text, images = self.pdf_processor.extract(pdf_path)
+            
+            # Log actual results
+            text_length = len(text) if text else 0
+            image_count = len(images) if images else 0
+            
+            logger.info(f"✅ STEP 1 COMPLETED:")
+            logger.info(f"   📝 Text extracted: {text_length:,} characters")
+            logger.info(f"   🖼️  Images found: {image_count}")
+            logger.info(f"   ⏱️  Time taken: {time.time() - start_time:.2f}s")
+            
+            if text_length == 0:
+                logger.warning("⚠️  No text extracted from PDF!")
+            
+            state.update({"text": text, "images": images})
+            return state
+            
+        except Exception as e:
+            logger.error(f"❌ STEP 1 FAILED: PDF extraction error")
+            logger.error(f"   Error: {str(e)}")
+            logger.error(f"   Traceback: {traceback.format_exc()}")
+            state.update({"text": "", "images": [], "error": str(e)})
+            return state
 
     # ------------------------------------------------------------------
     def _prepare(self, state: Dict) -> Dict:
-        chunks = self.text_processor.process(state["text"])
-        descriptions = self.image_processor.describe(state["images"]) if state["images"] else []
-        state.update({"chunks": chunks, "descriptions": descriptions})
-        return state
+        """Step 2: Process text into chunks and generate image descriptions"""
+        start_time = time.time()
+        
+        logger.info(f"⚙️  STEP 2: Starting text processing and image description")
+        
+        # Skip if previous step failed
+        if state.get("error"):
+            logger.error("❌ STEP 2 SKIPPED: Previous step failed")
+            state.update({"chunks": [], "descriptions": []})
+            return state
+            
+        try:
+            # Process text into chunks
+            text = state.get("text", "")
+            logger.info(f"📝 Processing {len(text):,} characters into chunks")
+            
+            chunks = self.text_processor.process(text)
+            chunk_count = len(chunks)
+            avg_chunk_size = sum(len(chunk) for chunk in chunks) / chunk_count if chunk_count > 0 else 0
+            
+            logger.info(f"✂️  Created {chunk_count} text chunks (avg size: {avg_chunk_size:.0f} chars)")
+            
+            # Process images
+            images = state.get("images", [])
+            descriptions = []
+            
+            if images:
+                logger.info(f"🖼️  Processing {len(images)} images for descriptions")
+                descriptions = self.image_processor.describe(images)
+                logger.info(f"📝 Generated {len(descriptions)} image descriptions")
+            else:
+                logger.info("🖼️  No images to process")
+            
+            logger.info(f"✅ STEP 2 COMPLETED:")
+            logger.info(f"   📄 Text chunks: {chunk_count}")
+            logger.info(f"   🖼️  Image descriptions: {len(descriptions)}")
+            logger.info(f"   ⏱️  Time taken: {time.time() - start_time:.2f}s")
+            
+            state.update({"chunks": chunks, "descriptions": descriptions})
+            return state
+            
+        except Exception as e:
+            logger.error(f"❌ STEP 2 FAILED: Text processing error")
+            logger.error(f"   Error: {str(e)}")
+            logger.error(f"   Traceback: {traceback.format_exc()}")
+            state.update({"chunks": [], "descriptions": [], "error": str(e)})
+            return state
 
     # ------------------------------------------------------------------
     def _embed_store(self, state: Dict) -> Dict:
-        combined = state["chunks"] + state["descriptions"]
+        """Step 3: Generate embeddings and store in databases"""
+        start_time = time.time()
         
-        if isinstance(self.store, HybridStore):
-            # Use hybrid storage for comprehensive document management
-            if combined:
-                result = self.store.store_document(
-                    file_path=state["pdf_path"],
-                    chunks=combined,
-                    title=Path(state["pdf_path"]).stem,
-                    source_type="pdf",
-                    lang="auto",  # TODO: Add language detection
-                    tags=None,  # TODO: Add tag extraction from content
-                    page_count=None  # TODO: Extract from PDF metadata
-                )
-                state["result"] = result
-            else:
+        logger.info(f"💾 STEP 3: Starting embedding generation and storage")
+        
+        # Skip if previous step failed
+        if state.get("error"):
+            logger.error("❌ STEP 3 SKIPPED: Previous step failed")
+            state["result"] = {"chunks": 0, "images": 0, "status": "failed", "error": state["error"]}
+            return state
+        
+        try:
+            chunks = state.get("chunks", [])
+            descriptions = state.get("descriptions", [])
+            combined = chunks + descriptions
+            
+            logger.info(f"🔢 Total items to embed: {len(combined)} ({len(chunks)} chunks + {len(descriptions)} descriptions)")
+            
+            if not combined:
+                logger.warning("⚠️  No content to embed - document appears empty")
                 state["result"] = {"chunks": 0, "images": 0, "status": "empty"}
-        else:
-            # Legacy vector store only
-            if combined:
+                return state
+            
+            if isinstance(self.store, HybridStore):
+                logger.info("🗃️  Using hybrid storage (PostgreSQL + Weaviate)")
+                
+                # Show what we're about to store
+                pdf_path = state["pdf_path"]
+                title = Path(pdf_path).stem
+                logger.info(f"📄 Document title: {title}")
+                logger.info(f"📁 File path: {pdf_path}")
+                
+                result = self.store.store_document(
+                    file_path=pdf_path,
+                    chunks=combined,
+                    title=title,
+                    source_type="pdf",
+                    lang="auto",
+                    tags=None,
+                    page_count=None
+                )
+                
+                # Log actual storage results
+                logger.info(f"✅ STEP 3 COMPLETED - Hybrid Storage:")
+                logger.info(f"   📄 Document ID: {result.get('document_id', 'N/A')}")
+                logger.info(f"   💾 PostgreSQL chunks: {result.get('chunks_stored', 0)}")
+                logger.info(f"   🧠 Weaviate vectors: {result.get('vectors_stored', 0)}")
+                logger.info(f"   ⏱️  Time taken: {time.time() - start_time:.2f}s")
+                
+                state["result"] = result
+                
+            else:
+                logger.info("🧠 Using vector store only")
+                
+                # Generate embeddings
+                logger.info("⚙️  Generating embeddings...")
                 embeddings = self.embedder.embed(combined)
+                logger.info(f"🔢 Generated {len(embeddings)} embeddings (dim: {len(embeddings[0]) if embeddings else 0})")
+                
+                # Store in vector database
                 self.store.add_texts(combined, embeddings)
-            state["result"] = {"chunks": len(state["chunks"]), "images": len(state["images"])}
-        
-        return state
+                
+                logger.info(f"✅ STEP 3 COMPLETED - Vector Store:")
+                logger.info(f"   📄 Chunks stored: {len(chunks)}")
+                logger.info(f"   🖼️  Images stored: {len(descriptions)}")
+                logger.info(f"   ⏱️  Time taken: {time.time() - start_time:.2f}s")
+                
+                state["result"] = {"chunks": len(chunks), "images": len(descriptions), "status": "success"}
+            
+            return state
+            
+        except Exception as e:
+            logger.error(f"❌ STEP 3 FAILED: Embedding/storage error")
+            logger.error(f"   Error: {str(e)}")
+            logger.error(f"   Traceback: {traceback.format_exc()}")
+            state["result"] = {"chunks": 0, "images": 0, "status": "failed", "error": str(e)}
+            return state
 
     # ------------------------------------------------------------------
     def run(self, pdf_path: str) -> Dict[str, int]:
         """Execute the workflow for ``pdf_path``."""
-
-        final_state = self.graph.invoke({"pdf_path": pdf_path})
-        return final_state["result"]
+        
+        logger.info(f"🚀 STARTING DOCUMENT PROCESSING WORKFLOW")
+        logger.info(f"📁 File: {pdf_path}")
+        
+        workflow_start_time = time.time()
+        
+        try:
+            final_state = self.graph.invoke({"pdf_path": pdf_path})
+            
+            total_time = time.time() - workflow_start_time
+            result = final_state.get("result", {})
+            
+            logger.info(f"🎉 WORKFLOW COMPLETED:")
+            logger.info(f"   ⏱️  Total time: {total_time:.2f}s")
+            logger.info(f"   📊 Final result: {result}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"💥 WORKFLOW FAILED:")
+            logger.error(f"   Error: {str(e)}")
+            logger.error(f"   Traceback: {traceback.format_exc()}")
+            return {"chunks": 0, "images": 0, "status": "failed", "error": str(e)}
