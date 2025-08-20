@@ -336,9 +336,38 @@ async def obsidian_chat_stream(request: ObsidianChatRequest):
 async def obsidian_search(request: SearchRequest):
     """Semantic search endpoint for Obsidian plugin."""
     try:
-        # TODO: Implement proper search using your vector store
-        # For now, return empty results
-        return []
+        from src.storage.hybrid_store import HybridStore
+        
+        if isinstance(processor.store, HybridStore):
+            # Use hybrid search with rich metadata
+            results = processor.store.search(
+                query=request.query,
+                k=request.limit,
+                alpha=0.7  # Favor semantic search
+            )
+            
+            search_results = []
+            for result in results:
+                doc_info = result.get("document", {})
+                search_results.append(SearchResult(
+                    content=result["text"],
+                    source=doc_info.get("title", "Unknown"),
+                    score=result.get("score", 0.0),
+                    metadata={
+                        "doc_uid": result.get("doc_uid"),
+                        "chunk_id": result.get("chunk_id"),
+                        "page": result.get("page"),
+                        "section": result.get("section"),
+                        "tags": doc_info.get("tags", []),
+                        "lang": doc_info.get("lang", "auto")
+                    }
+                ))
+            
+            return search_results
+        else:
+            # Fallback to basic vector search
+            return []
+            
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(exc)}") from exc
 
@@ -347,8 +376,29 @@ async def obsidian_search(request: SearchRequest):
 async def get_obsidian_documents():
     """Get list of processed documents for Obsidian plugin."""
     try:
-        # TODO: Implement document listing from vector store
-        return []
+        from src.storage.hybrid_store import HybridStore
+        
+        if isinstance(processor.store, HybridStore):
+            # Get documents from PostgreSQL
+            documents = processor.store.get_documents(limit=100)
+            
+            document_list = []
+            for doc in documents:
+                document_list.append(DocumentMetadata(
+                    id=doc["doc_uid"],
+                    filename=doc["title"],
+                    content_preview=f"Document with {doc['chunk_count']} chunks",
+                    chunks=doc["chunk_count"],
+                    images=0,  # TODO: Add image tracking
+                    processed_at=datetime.fromisoformat(doc["ingested_at"]) if doc["ingested_at"] else datetime.now(),
+                    file_size=0  # TODO: Add file size tracking
+                ))
+            
+            return document_list
+        else:
+            # Fallback for legacy vector store
+            return []
+            
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to get documents: {str(exc)}") from exc
 
@@ -357,8 +407,20 @@ async def get_obsidian_documents():
 async def delete_obsidian_document(document_id: str):
     """Delete a document from the index."""
     try:
-        # TODO: Implement document deletion from vector store
-        return {"status": "deleted", "document_id": document_id}
+        from src.storage.hybrid_store import HybridStore
+        
+        if isinstance(processor.store, HybridStore):
+            success = processor.store.delete_document(document_id)
+            if success:
+                return {"status": "deleted", "document_id": document_id}
+            else:
+                raise HTTPException(status_code=404, detail="Document not found")
+        else:
+            # Legacy vector store doesn't support deletion
+            raise HTTPException(status_code=501, detail="Delete not supported in legacy mode")
+            
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to delete document: {str(exc)}") from exc
 
@@ -367,13 +429,36 @@ async def delete_obsidian_document(document_id: str):
 async def get_obsidian_index_status():
     """Get current index status for Obsidian plugin."""
     try:
-        # TODO: Implement actual index status check
-        return IndexStatus(
-            total_documents=0,
-            total_chunks=0,
-            last_updated=datetime.now(),
-            is_empty=True
-        )
+        from src.storage.hybrid_store import HybridStore
+        
+        if isinstance(processor.store, HybridStore):
+            # Get actual statistics from PostgreSQL
+            documents = processor.store.get_documents(limit=1000)  # Get more for counting
+            total_documents = len(documents)
+            total_chunks = sum(doc.get("chunk_count", 0) for doc in documents)
+            
+            # Find most recent document
+            last_updated = datetime.now()
+            if documents:
+                latest_doc = max(documents, key=lambda d: d.get("ingested_at", ""))
+                if latest_doc.get("ingested_at"):
+                    last_updated = datetime.fromisoformat(latest_doc["ingested_at"])
+            
+            return IndexStatus(
+                total_documents=total_documents,
+                total_chunks=total_chunks,
+                last_updated=last_updated,
+                is_empty=total_documents == 0
+            )
+        else:
+            # Legacy fallback
+            return IndexStatus(
+                total_documents=0,
+                total_chunks=0,
+                last_updated=datetime.now(),
+                is_empty=True
+            )
+            
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to get index status: {str(exc)}") from exc
 

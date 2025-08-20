@@ -1,13 +1,31 @@
 from .processors.embedder import Embedder
 from .storage.vector_store import get_vector_store
+from .storage.hybrid_store import HybridStore
 from .workflows.document_workflow import DocumentWorkflow
 from .workflows.qa_workflow import QAWorkflow
+from .database.init_db import init_database_on_startup
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class LectureProcessor:
-    def __init__(self) -> None:
+    def __init__(self, use_hybrid: bool = True) -> None:
         self.embedder = Embedder()
-        self.store = get_vector_store(self.embedder.embed)
+        
+        if use_hybrid:
+            # Initialize PostgreSQL database first
+            if not init_database_on_startup():
+                logger.warning("Database initialization failed, falling back to vector store only")
+                self.store = get_vector_store(self.embedder.embed)
+            else:
+                # Use hybrid PostgreSQL + Weaviate storage
+                vector_store = get_vector_store(self.embedder.embed)
+                self.store = HybridStore(vector_store, self.embedder)
+        else:
+            # Use legacy vector store only
+            self.store = get_vector_store(self.embedder.embed)
+        
         self.document_workflow = DocumentWorkflow(self.store, self.embedder)
         self.qa_workflow = QAWorkflow(self.store, self.embedder)
 

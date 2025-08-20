@@ -14,9 +14,12 @@ CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 200
 MAX_TOKENS = 4000
 
-CHROMA_PERSIST_DIR = "./chroma_db"
 COLLECTION_NAME = "lecture_documents"
 
 # Vector store settings
 WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8080")
 WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY")
+
+# PostgreSQL settings
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://username:password@localhost:5432/inference_db")
+DATABASE_ECHO = os.getenv("DATABASE_ECHO", "False").lower() == "true"

@@ -1,8 +1,7 @@
 """LangGraph-powered document processing workflow."""
 
 from typing import Dict, Union
-
-from langgraph.graph import END, StateGraph
+from pathlib import Path
 
 from langgraph.graph import END, StateGraph
 
@@ -11,14 +10,15 @@ from ..processors.image_processor import ImageProcessor
 from ..processors.text_processor import TextProcessor
 from ..processors.embedder import Embedder
 from ..storage.vector_store import SimpleVectorStore, WeaviateVectorStore
+from ..storage.hybrid_store import HybridStore
 
 
 class DocumentWorkflow:
-    """Process a PDF and populate the vector store."""
+    """Process a PDF and populate both PostgreSQL and vector store."""
 
     def __init__(
         self,
-        store: Union[SimpleVectorStore, WeaviateVectorStore],
+        store: Union[SimpleVectorStore, WeaviateVectorStore, HybridStore],
         embedder: Embedder | None = None,
     ) -> None:
 
@@ -54,10 +54,29 @@ class DocumentWorkflow:
     # ------------------------------------------------------------------
     def _embed_store(self, state: Dict) -> Dict:
         combined = state["chunks"] + state["descriptions"]
-        if combined:
-            embeddings = self.embedder.embed(combined)
-            self.store.add_texts(combined, embeddings)
-        state["result"] = {"chunks": len(state["chunks"]), "images": len(state["images"])}
+        
+        if isinstance(self.store, HybridStore):
+            # Use hybrid storage for comprehensive document management
+            if combined:
+                result = self.store.store_document(
+                    file_path=state["pdf_path"],
+                    chunks=combined,
+                    title=Path(state["pdf_path"]).stem,
+                    source_type="pdf",
+                    lang="auto",  # TODO: Add language detection
+                    tags=None,  # TODO: Add tag extraction from content
+                    page_count=None  # TODO: Extract from PDF metadata
+                )
+                state["result"] = result
+            else:
+                state["result"] = {"chunks": 0, "images": 0, "status": "empty"}
+        else:
+            # Legacy vector store only
+            if combined:
+                embeddings = self.embedder.embed(combined)
+                self.store.add_texts(combined, embeddings)
+            state["result"] = {"chunks": len(state["chunks"]), "images": len(state["images"])}
+        
         return state
 
     # ------------------------------------------------------------------
