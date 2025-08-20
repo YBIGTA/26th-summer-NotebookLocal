@@ -6,14 +6,13 @@ The easiest way to get PostgreSQL and Weaviate running:
 
 ### 1. Quick Start
 ```bash
-# 1. Run the setup script
-./setup_docker.sh
+# 1. Run the unified setup script
+./setup_local_dev.sh
 
 # 2. Edit .env file with your OpenAI API key
 nano .env
 
-# 3. Install dependencies and start server
-uv sync
+# 3. Start server
 python start_server.py
 ```
 
@@ -150,8 +149,25 @@ curl http://localhost:8080/v1/.well-known/live
 ```
 
 ### Common Problems
+
+#### Docker Permission Issues
+If you get "permission denied" when running Docker commands:
+
+```bash
+# Add your user to the docker group
+sudo usermod -aG docker $USER
+
+# Apply the group change immediately
+newgrp docker
+
+# Or logout/login to apply changes
+# Then retry the setup
+./setup_local_dev.sh
+```
+
+#### Other Issues
 - **Port already in use**: Check if PostgreSQL/Weaviate are already running
-- **Permission denied**: Make sure Docker has proper permissions
+- **Docker daemon not running**: Start with `sudo systemctl start docker`
 - **API key missing**: Set `OPENAI_API_KEY` in `.env` file
 
 That's it! No complex migration tools needed.

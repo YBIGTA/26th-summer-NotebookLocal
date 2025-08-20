@@ -4,10 +4,10 @@ Get your hybrid PostgreSQL + Weaviate RAG system running in 3 steps!
 
 ## ⚡ 3-Step Setup
 
-### 1. Start Databases
+### 1. Run Setup Script
 ```bash
-# Start PostgreSQL + Weaviate with Docker
-./setup_docker.sh
+# One script does everything: UV install, Docker setup, dependencies
+./setup_local_dev.sh
 ```
 
 ### 2. Configure API Keys
@@ -21,9 +21,6 @@ OPENAI_API_KEY=your_actual_api_key_here
 
 ### 3. Start Server
 ```bash
-# Install dependencies with UV (much faster!)
-uv sync
-
 # Start the server (auto-creates database tables)
 python start_server.py
 ```

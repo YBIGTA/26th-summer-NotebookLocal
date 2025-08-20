@@ -14,17 +14,13 @@ A hybrid PostgreSQL + Weaviate RAG system with modular LLM routing and local mod
 ## 📦 Quick Start
 
 ```bash
-# 1. Setup databases
-./setup_docker.sh
+# 1. Run unified setup (installs UV, starts Docker, installs dependencies)
+./setup_local_dev.sh
 
-# 2. Install dependencies  
-uv sync
-
-# 3. Configure API keys
-cp .env.example .env
+# 2. Configure API keys
 nano .env  # Add your OPENAI_API_KEY
 
-# 4. Start server
+# 3. Start server
 python start_server.py
 ```
 
