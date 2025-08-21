@@ -10,10 +10,16 @@ import yaml
 class BaseAdapter(ABC):
     """Base adapter that all model adapters must inherit from"""
     
-    def __init__(self, config_path: str):
-        self.config = self._load_config(config_path)
-        self.name = self.config.get('name', 'unknown')
-        self.model_id = self.config.get('model_id')
+    def __init__(self, config_path: Optional[str] = None):
+        if config_path:
+            self.config = self._load_config(config_path)
+            self.name = self.config.get('name', 'unknown')
+            self.model_id = self.config.get('model_id')
+        else:
+            # Stateless adapter - no default config
+            self.config = {}
+            self.name = self.__class__.__name__
+            self.model_id = None
         self.llm: Optional[BaseChatModel] = None
         self._initialized = False
     
@@ -35,31 +41,25 @@ class BaseAdapter(ABC):
             self._initialized = True
             print(f"✅ Model loaded for adapter: {self.name}")
     
+    @abstractmethod
     async def complete(self, request: ChatRequest) -> ChatResponse:
-        """Process a completion request - overridden by subclasses"""
-        await self._ensure_initialized()
-        
-        # For LangChain-based adapters (OpenAI, Anthropic)
-        if hasattr(self, 'llm') and self.llm is not None:
-            messages = self._convert_to_langchain_messages(request.messages)
-            response = await self.llm.ainvoke(messages)
-            return self._convert_to_openai_response(response, request)
-        else:
-            # For vLLM server-based adapters, this method should be overridden
-            raise NotImplementedError("complete method must be implemented by subclass")
+        """Process a completion request - MUST be implemented by all adapters"""
+        pass
     
+    @abstractmethod  
     async def stream(self, request: ChatRequest) -> AsyncGenerator[str, None]:
-        """Process a streaming request - overridden by subclasses"""
-        await self._ensure_initialized()
-        
-        # For LangChain-based adapters (OpenAI, Anthropic)
-        if hasattr(self, 'llm') and self.llm is not None:
-            messages = self._convert_to_langchain_messages(request.messages)
-            async for chunk in self.llm.astream(messages):
-                yield self._format_stream_chunk(chunk, request)
-        else:
-            # For vLLM server-based adapters, this method should be overridden
-            raise NotImplementedError("stream method must be implemented by subclass")
+        """Process a streaming request - MUST be implemented by all adapters"""
+        pass
+    
+    @abstractmethod
+    def embed(self, texts: List[str], model: str) -> List[List[float]]:
+        """Generate embeddings - MUST be implemented by all adapters"""
+        pass
+    
+    @abstractmethod
+    async def describe_images(self, images: List, model: str, prompt: str = "Describe this image") -> List[str]:
+        """Generate image descriptions - MUST be implemented by all adapters"""
+        pass
     
     async def health_check(self) -> bool:
         """Check if the adapter is healthy (loads model if needed)"""

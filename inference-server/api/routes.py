@@ -145,7 +145,7 @@ async def process_file(file: UploadFile = File(...)):
 async def ask_question(request: QuestionRequest):
     """Ask a question about the processed documents."""
     try:
-        answer = processor.ask_question(request.question)
+        answer = await processor.ask_question(request.question)
         return QuestionResponse(question=request.question, answer=answer)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to answer question: {str(exc)}") from exc

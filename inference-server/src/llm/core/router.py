@@ -31,14 +31,19 @@ class LLMRouter:
             
             try:
                 adapter_type = adapter_config['type']
-                config_file = f"configs/models/{adapter_config['config_file']}"
                 
                 if adapter_type == 'openai':
-                    self.adapters[adapter_name] = OpenAIAdapter(config_file)
+                    adapter = OpenAIAdapter(None)
+                    adapter.initialize()
+                    self.adapters[adapter_name] = adapter
                 elif adapter_type == 'anthropic':
-                    self.adapters[adapter_name] = AnthropicAdapter(config_file)
+                    adapter = AnthropicAdapter(None)
+                    adapter.initialize()
+                    self.adapters[adapter_name] = adapter
                 elif adapter_type == 'qwen':
-                    self.adapters[adapter_name] = QwenAdapter(config_file)
+                    adapter = QwenAdapter(None)
+                    adapter.initialize()
+                    self.adapters[adapter_name] = adapter
                 else:
                     logger.error(f"Unknown adapter type: {adapter_type}")
                     continue
@@ -55,6 +60,13 @@ class LLMRouter:
             raise AdapterNotAvailableException(f"Adapter {adapter_name} not available")
         
         adapter = self.adapters[adapter_name]
+        
+        # If no model specified in request, use the default from routing config
+        if not request.model:
+            if self._has_vision_content(request):
+                request.model = self.routing_config['rules']['vision_default']
+            else:
+                request.model = self.routing_config['rules']['chat_default']
         
         try:
             if request.stream:
@@ -75,10 +87,12 @@ class LLMRouter:
                     return rule['adapter']
         
         if self._has_vision_content(request):
-            return rules['vision_default']
+            vision_model = rules['vision_default']
+            return self._get_adapter_for_model(vision_model)
         
         # Default to chat model for all other requests
-        return rules['chat_default']
+        chat_model = rules['chat_default']
+        return self._get_adapter_for_model(chat_model)
     
     def _has_vision_content(self, request: ChatRequest) -> bool:
         """Check if request contains vision content"""

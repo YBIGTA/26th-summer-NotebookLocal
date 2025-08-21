@@ -3,7 +3,7 @@ from ..models.requests import ChatRequest
 from ..models.responses import ChatResponse, Choice, Message, Usage
 import aiohttp
 import asyncio
-from typing import AsyncGenerator, List
+from typing import AsyncGenerator, List, Optional
 import uuid
 import time
 import logging
@@ -20,19 +20,15 @@ logger = logging.getLogger(__name__)
 
 
 class QwenAdapter(BaseAdapter):
-    """Provider adapter for all Qwen models (text and vision) via vLLM server"""
+    """Stateless adapter for all Qwen models (text and vision) via vLLM server"""
     
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: Optional[str] = None):
         super().__init__(config_path)
-        
-        # Load provider-level settings
-        self.provider_config = self.config.get('provider_settings', {})
         self.vllm_process = None
         
     def initialize(self):
-        """Initialize Qwen provider adapter"""        
-        logger.info(f"Initialized QwenAdapter provider")
-        logger.info(f"Provider config loaded: {len(self.provider_config)} settings")
+        """Initialize Qwen adapter"""        
+        logger.info("Initialized QwenAdapter (stateless)")
 
     async def _check_server_running(self, port: int) -> bool:
         """Check if vLLM server is running on specified port"""
@@ -233,19 +229,13 @@ class QwenAdapter(BaseAdapter):
     
     def _load_model_config(self, model_name: str) -> dict:
         """Load configuration for specific model"""
-        # This will be updated to load from individual model configs
-        # For now, return default config
-        return {
-            'name': model_name,
-            'port': 8001,
-            'model_path': '/path/to/model',
-            'served_model_name': model_name,
-            'auto_start': False,
-            'timeout': 60,
-            'temperature': 0.7,
-            'max_tokens': 2048,
-            'top_p': 1.0
-        }
+        from ..utils.config_loader import ConfigLoader
+        config_loader = ConfigLoader()
+        try:
+            return config_loader.load_config(f'configs/models/qwen/{model_name}.yaml')
+        except Exception as e:
+            logger.error(f"Failed to load config for {model_name}: {e}")
+            raise
     
     def embed(self, texts: List[str], model: str) -> List[List[float]]:
         """Generate embeddings using Qwen embedding model"""

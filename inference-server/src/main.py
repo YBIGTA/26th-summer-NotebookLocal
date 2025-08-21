@@ -32,5 +32,5 @@ class LectureProcessor:
     def process_document(self, pdf_path: str):
         return self.document_workflow.run(pdf_path)
 
-    def ask_question(self, question: str) -> str:
-        return self.qa_workflow.ask(question)
+    async def ask_question(self, question: str) -> str:
+        return await self.qa_workflow.ask(question)

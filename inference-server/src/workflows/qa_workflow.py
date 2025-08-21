@@ -1,7 +1,7 @@
 """Question answering workflow using LangChain and LangGraph with modular LLM routing."""
 
 from typing import Dict, Union, Any
-import asyncio
+import logging
 
 from langgraph.graph import END, StateGraph
 
@@ -42,15 +42,22 @@ class QAWorkflow:
 
     # ------------------------------------------------------------------
     def _retrieve(self, state: Dict) -> Dict:
+        logger = logging.getLogger(__name__)
+        logger.info(f"🔍 Starting retrieval for question: '{state['question'][:50]}...'")
+        
         if isinstance(self.store, HybridStore):
             # Use hybrid search with metadata filtering
             filters = state.get("filters", None)  # Optional filters from API
+            logger.info(f"📊 Using HybridStore with filters: {filters}")
+            
             results = self.store.search(
                 query=state["question"],
                 k=4,
                 filters=filters,
                 alpha=0.7  # Favor semantic search over keyword
             )
+            
+            logger.info(f"📋 Found {len(results)} results from hybrid search")
             
             # Build context with source information
             context_parts = []
@@ -68,26 +75,38 @@ class QAWorkflow:
             state["context"] = "\n\n".join(context_parts)
             state["sources"] = sources
             
+            logger.info(f"📝 Built context: {len(state['context'])} chars from {len(context_parts)} chunks")
+            
         elif isinstance(self.store, SimpleVectorStore):
+            logger.info("📊 Using SimpleVectorStore")
             q_emb = self.embedder.embed([state["question"]])[0]
             results = self.store.similarity_search(q_emb, k=4)
             state["context"] = "\n".join(text for text, _ in results)
             state["sources"] = []
+            
+            logger.info(f"📝 Built context: {len(state['context'])} chars from {len(results)} chunks")
         else:
+            logger.info("📊 Using fallback vector store")
             results = self.store.similarity_search(state["question"], k=4)
             state["context"] = "\n".join(r.get("text", "") for r in results)
             state["sources"] = []
             
+            logger.info(f"📝 Built context: {len(state['context'])} chars from {len(results)} chunks")
+            
         return state
 
     # ------------------------------------------------------------------
-    def _generate(self, state: Dict) -> Dict:
+    async def _generate(self, state: Dict) -> Dict:
         if not self.llm_router:
             state["answer"] = "Error: LLM router not available"
             return state
         
+        logger = logging.getLogger(__name__)
+        
         try:
-            # Create OpenAI-compatible request
+            logger.info("🤖 Starting LLM generation...")
+            
+            # Create OpenAI-compatible request (router will decide model)
             messages = [
                 Message(
                     role="system", 
@@ -103,37 +122,45 @@ class QAWorkflow:
                 messages=messages,
                 temperature=0.7,
                 max_tokens=2048
+                # NO model specified - let router decide dynamically
             )
             
-            # Call async LLM router from sync context
-            loop = asyncio.get_event_loop()
-            response = loop.run_until_complete(self.llm_router.route(request))
+            logger.info(f"📤 Sending request to router: {len(messages)} messages, temp={request.temperature}")
+            
+            # Router decides model and routes to appropriate adapter
+            response = await self.llm_router.route(request)
+            
+            logger.info(f"📥 Router response: model={getattr(response, 'model', 'unknown')}")
             
             if response.choices and len(response.choices) > 0:
-                state["answer"] = response.choices[0].message.content
+                answer = response.choices[0].message.content
+                state["answer"] = answer
+                logger.info(f"✅ LLM generation successful: {len(answer)} chars")
             else:
                 state["answer"] = "Error: No response from LLM"
+                logger.error("❌ LLM response had no choices")
                 
         except Exception as e:
-            print(f"Error in LLM generation: {e}")
+            error_msg = f"Error in LLM generation: {e}"
+            logger.error(f"❌ {error_msg}")
             state["answer"] = f"Error: {str(e)}"
             
         return state
 
     # ------------------------------------------------------------------
-    def ask(self, question: str, filters: Dict[str, Any] = None) -> str:
+    async def ask(self, question: str, filters: Dict[str, Any] = None) -> str:
         """Answer ``question`` using retrieved context with optional filters."""
 
-        final_state = self.graph.invoke({
+        final_state = await self.graph.ainvoke({
             "question": question,
             "filters": filters
         })
         return final_state["answer"]
     
-    def ask_with_sources(self, question: str, filters: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def ask_with_sources(self, question: str, filters: Dict[str, Any] = None) -> Dict[str, Any]:
         """Answer question and return sources for citation."""
         
-        final_state = self.graph.invoke({
+        final_state = await self.graph.ainvoke({
             "question": question,
             "filters": filters
         })

@@ -25,28 +25,4 @@ class Embedder:
         if not self.router:
             raise Exception("Universal Router not available - cannot generate embeddings")
         
-        try:
-            return self.router.embed(texts)
-        except Exception as e:
-            logger.error(f"Embedding generation failed: {e}")
-            # Fallback to hardcoded OpenAI for now during transition
-            return self._fallback_embed(texts)
-    
-    def _fallback_embed(self, texts: List[str]) -> List[List[float]]:
-        """Fallback embedding using hardcoded OpenAI (temporary during transition)."""
-        logger.warning("Using fallback OpenAI embeddings - modular routing failed")
-        
-        try:
-            from config import OPENAI_API_KEY, EMBEDDING_MODEL
-            try:
-                from langchain_openai import OpenAIEmbeddings
-            except Exception:
-                from langchain.embeddings.openai import OpenAIEmbeddings
-            
-            client = OpenAIEmbeddings(
-                model=EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY
-            )
-            return client.embed_documents(texts)
-        except Exception as e:
-            logger.error(f"Fallback embedding also failed: {e}")
-            raise Exception(f"All embedding methods failed: {e}")
+        return self.router.embed(texts)
