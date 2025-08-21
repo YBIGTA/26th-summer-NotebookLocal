@@ -59,6 +59,17 @@ cp .env.example .env
 
 # Edit with your settings
 nano .env
+
+# Essential settings:
+DATABASE_URL=postgresql://inference_user:password@localhost:5432/inference_db
+WEAVIATE_URL=http://localhost:8080
+OPENAI_API_KEY=your_openai_key_here
+
+# Optional: Enable debug logging for troubleshooting
+DEBUG_MODE=true
+LOG_API_REQUESTS=true
+LOG_DATABASE_OPS=true
+LOG_PROCESSING_DETAILS=true
 ```
 
 ## 🚀 Server Startup
@@ -100,6 +111,7 @@ DROP TABLE IF EXISTS old_table CASCADE;
 
 ## 🔍 Quick Commands
 
+### Database Queries
 ```bash
 # Connect to your database
 psql $DATABASE_URL
@@ -119,6 +131,21 @@ SELECT * FROM documents LIMIT 10;
 # Check document count
 SELECT COUNT(*) FROM documents;
 SELECT COUNT(*) FROM chunks;
+```
+
+### Debug Tools
+```bash
+# Use built-in debug tools
+python tools/db_inspect.py
+
+# Monitor performance
+python tools/debug_tools.py
+
+# Check system health via API
+curl http://localhost:8000/api/v1/debug/health-detailed
+
+# Get database statistics
+curl http://localhost:8000/api/v1/debug/db-stats
 ```
 
 ## 🩺 Troubleshooting

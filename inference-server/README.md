@@ -1,96 +1,164 @@
 # NotebookLocal Inference Server
 
-A hybrid PostgreSQL + Weaviate RAG system with modular LLM routing and local model support.
+A comprehensive PDF processing and RAG system with hybrid storage, modular LLM routing, and advanced monitoring capabilities.
 
 ## 🚀 Features
 
-- **🗄️ Hybrid Database**: PostgreSQL metadata + Weaviate vectors
-- **🔍 Hybrid Search**: BM25 + semantic search with metadata filtering  
-- **🤖 Modular LLM**: OpenAI, Anthropic, and local model support
-- **⚡ VLLM Ready**: Optimized for local model inference
-- **🇰🇷 Korean PDFs**: Advanced PyMuPDF integration
-- **🐳 Docker Setup**: One-command deployment
+- **🗄️ Hybrid Storage**: PostgreSQL metadata + Weaviate vector database
+- **🔍 Advanced Search**: BM25 + semantic search with metadata filtering  
+- **🤖 Multi-LLM Support**: OpenAI, Anthropic, and local model routing
+- **📄 PDF Intelligence**: Dual text extraction (direct + AI vision)
+- **🇰🇷 Korean Support**: Advanced PyMuPDF integration for Korean PDFs
+- **📊 Unified Logging**: Comprehensive request/response monitoring
+- **🐳 Docker Ready**: One-command database deployment
 
 ## 📦 Quick Start
 
 ```bash
-# 1. Run unified setup (installs UV, starts Docker, installs dependencies)
+# 1. Setup environment and databases
 ./setup_local_dev.sh
 
-# 2. Configure API keys
-nano .env  # Add your OPENAI_API_KEY
+# 2. Configure environment
+cp .env.example .env
+# Edit .env with your API keys
 
 # 3. Start server
 python start_server.py
 ```
 
-## 🔌 API Endpoints
+## 🏗️ Architecture Overview
 
-- **Docs**: http://localhost:8000/docs
-- **Process PDF**: `POST /api/v1/process`
-- **Ask Question**: `POST /api/v1/ask`
-- **Obsidian Chat**: `POST /api/v1/obsidian/chat`
-- **Search**: `POST /api/v1/obsidian/search`
-
-## 🛠️ Local Model Development
-
-```bash
-# Add VLLM for local inference
-uv add vllm
-
-# Add specific models
-uv add transformers accelerate bitsandbytes
-
-# Development setup
-./setup_local_dev.sh
+### PDF Processing Pipeline
+```
+PDF Input → PDFProcessor → ImageProcessor → TextProcessor → HybridStore
+    │            │              │              │             │
+    │         Direct Text   AI Vision Text  Chunking     PostgreSQL
+    │         Extraction    (OpenAI API)    Embedding     + Weaviate
+    │
+    └─── Images ────────────────┘
 ```
 
-## 🏗️ Architecture
-
-```
-PostgreSQL (metadata) ←→ Weaviate (vectors)
-       ↓                     ↓
-   Documents               Embeddings
-   Chunks                 Hybrid Search
-   Tags, Citations        BM25 + Semantic
-```
+**Key Insight**: The system has TWO separate text extraction processes:
+1. **PDFProcessor**: Direct text from PDF (fast, accurate for typed text)
+2. **ImageProcessor**: AI vision extracts text from images/diagrams (slower, uses OpenAI API)
 
 ## 📂 Project Structure
 
 ```
 inference-server/
-├── src/
-│   ├── database/           # PostgreSQL models
-│   ├── storage/           # Hybrid storage coordinator  
-│   ├── workflows/         # Document & QA workflows
-│   ├── processors/        # PDF, text, embeddings
-│   └── llm/              # Modular LLM routing
-├── api/                  # FastAPI routes
-├── docker-compose.yml    # Database setup
-└── pyproject.toml       # UV dependencies
+├── 🔧 Configuration
+│   ├── config.py              # Central configuration
+│   ├── .env.example           # Environment template
+│   └── configs/               # LLM adapter configs
+│
+├── 🗄️ Database Layer
+│   ├── src/database/          # PostgreSQL models & connection
+│   └── docker-compose.yml     # PostgreSQL + Weaviate setup
+│
+├── 📊 Storage Layer
+│   └── src/storage/
+│       ├── hybrid_store.py    # Coordinates PostgreSQL + Weaviate
+│       └── vector_store.py    # Weaviate operations
+│
+├── ⚙️ Processing Layer
+│   └── src/processors/
+│       ├── pdf_processor.py   # PDF text + image extraction
+│       ├── image_processor.py # AI vision text extraction (OpenAI)
+│       ├── text_processor.py  # Text chunking
+│       └── embedder.py        # Vector embeddings
+│
+├── 🔄 Workflow Layer
+│   └── src/workflows/
+│       ├── document_workflow.py # PDF processing pipeline
+│       └── qa_workflow.py       # Question answering
+│
+├── 🤖 LLM Layer
+│   └── src/llm/               # Modular LLM routing system
+│       ├── core/router.py     # Route to different models
+│       └── adapters/          # OpenAI, Anthropic, local models
+│
+├── 🌐 API Layer
+│   └── api/
+│       ├── main.py            # FastAPI app
+│       └── routes.py          # All endpoints
+│
+├── 🔍 Monitoring & Debug
+│   ├── src/utils/logger.py    # Unified logging system
+│   └── tools/                 # Debug and inspection tools
+│
+└── 📚 Documentation
+    ├── README.md              # This file
+    ├── QUICKSTART.md          # Setup guide
+    ├── DATABASE_SETUP.md      # Database configuration
+    └── MONITORING_GUIDE.md    # Logging configuration
 ```
 
-## 🔧 Configuration
+## 🔌 API Endpoints
 
-Edit `.env` file:
+### Core Endpoints
+- **📄 Process PDF**: `POST /api/v1/process` - Upload and process PDF files
+- **❓ Ask Question**: `POST /api/v1/ask` - Query processed documents
+- **🔍 Search**: `POST /api/v1/obsidian/search` - Semantic document search
+- **📊 Health Check**: `GET /api/v1/health` - System status
+
+### Obsidian Plugin Integration
+- **💬 Chat**: `POST /api/v1/obsidian/chat` - RAG-enhanced chat
+- **📋 Documents**: `GET /api/v1/obsidian/documents` - List processed files
+- **🗑️ Delete**: `DELETE /api/v1/obsidian/documents/{id}` - Remove documents
+
+### Debug Endpoints
+- **🩺 Health Detail**: `GET /api/v1/debug/health-detailed` - Detailed system status
+- **📊 DB Stats**: `GET /api/v1/debug/db-stats` - Database statistics
+
+## ⚙️ Configuration
+
+### Environment Variables (.env)
 ```bash
+# Database Configuration
 DATABASE_URL=postgresql://inference_user:password@localhost:5432/inference_db
 WEAVIATE_URL=http://localhost:8080
-OPENAI_API_KEY=your_key_here
+
+# API Keys
+OPENAI_API_KEY=your_openai_key_here
+
+# Logging Configuration (for debugging)
+DEBUG_MODE=false
+LOG_API_REQUESTS=false
+LOG_DATABASE_OPS=false
+LOG_PROCESSING_DETAILS=false
+```
+
+### Enable Debug Logging
+```bash
+# Enable detailed logging for troubleshooting
+DEBUG_MODE=true
+LOG_API_REQUESTS=true
+LOG_DATABASE_OPS=true
+LOG_PROCESSING_DETAILS=true
 ```
 
 ## 🩺 Troubleshooting
 
+### Performance Issues
+- **Slow PDF processing**: Check OpenAI API rate limits and image count
+- **Long delays**: Enable debug logging to see which step is slow
+- The ImageProcessor makes OpenAI Vision API calls for every image - this is often the bottleneck
+
+### Database Issues
 ```bash
-# Check services
+# Check database status
 docker-compose ps
 
-# View logs  
-docker-compose logs
+# View database logs
+docker-compose logs postgres weaviate
 
 # Test connections
-curl http://localhost:8080/v1/.well-known/live  # Weaviate
-psql $DATABASE_URL -c "SELECT 1"               # PostgreSQL
+python tools/db_inspect.py
 ```
 
-For detailed setup instructions, see [QUICKSTART.md](QUICKSTART.md) and [DATABASE_SETUP.md](DATABASE_SETUP.md).
+### Common Issues
+- **Database connection**: Ensure Docker containers are running
+- **Korean text issues**: Verify PyMuPDF installation and font support
+- **API rate limits**: Monitor OpenAI usage in debug logs
+
+For detailed instructions, see [QUICKSTART.md](QUICKSTART.md), [DATABASE_SETUP.md](DATABASE_SETUP.md), and [MONITORING_GUIDE.md](MONITORING_GUIDE.md).

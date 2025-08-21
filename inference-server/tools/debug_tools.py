@@ -73,6 +73,13 @@ def test_db_stats():
 
 def test_pdf_upload(pdf_path):
     """Test PDF upload and processing"""
+    # If relative path, try from project root
+    if not os.path.isabs(pdf_path):
+        project_root = Path(__file__).parent.parent
+        full_path = project_root / pdf_path
+        if full_path.exists():
+            pdf_path = str(full_path)
+    
     if not os.path.exists(pdf_path):
         print(f"❌ PDF file not found: {pdf_path}")
         return False
@@ -152,8 +159,11 @@ def run_full_test():
     # Test 4: PDF upload (if test.pdf exists)
     pdf_path = "test.pdf"
     upload_ok = False
-    if os.path.exists(pdf_path):
-        upload_ok = test_pdf_upload(pdf_path)
+    # Check in project root
+    project_root = Path(__file__).parent.parent
+    full_pdf_path = project_root / pdf_path
+    if full_pdf_path.exists():
+        upload_ok = test_pdf_upload(str(full_pdf_path))
         print()
     else:
         print(f"⚠️  Skipping PDF test - {pdf_path} not found")

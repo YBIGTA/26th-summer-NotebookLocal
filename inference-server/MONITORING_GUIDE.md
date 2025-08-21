@@ -5,11 +5,12 @@ This guide shows you how to monitor your inference server and see exactly what's
 ## 📋 Table of Contents
 
 1. [Quick Start](#quick-start)
-2. [Understanding the Logs](#understanding-the-logs)
-3. [Testing Tools](#testing-tools)
-4. [Database Inspection](#database-inspection)
-5. [API Monitoring](#api-monitoring)
-6. [Troubleshooting](#troubleshooting)
+2. [Logging Configuration](#logging-configuration)
+3. [Understanding the Logs](#understanding-the-logs)
+4. [Testing Tools](#testing-tools)
+5. [Database Inspection](#database-inspection)
+6. [API Monitoring](#api-monitoring)
+7. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -38,6 +39,68 @@ python db_inspect.py documents
 
 # Show recent chunks
 python db_inspect.py chunks 10
+```
+
+---
+
+## ⚙️ Logging Configuration
+
+The inference server uses a unified logging system that can be configured via environment variables in your `.env` file.
+
+### Enable Debug Logging
+
+To see detailed information about every step:
+
+```bash
+# Add to your .env file
+DEBUG_MODE=true
+LOG_API_REQUESTS=true
+LOG_DATABASE_OPS=true
+LOG_PROCESSING_DETAILS=true
+```
+
+### Logging Levels
+
+```bash
+# Control overall verbosity
+LOG_LEVEL=INFO    # or DEBUG, WARNING, ERROR
+
+# Granular control
+DEBUG_MODE=true              # Show all debug information
+LOG_API_REQUESTS=true        # Log OpenAI API calls with timing
+LOG_DATABASE_OPS=true        # Log PostgreSQL and Weaviate operations  
+LOG_PROCESSING_DETAILS=true  # Log PDF processing steps
+```
+
+### What Each Setting Shows
+
+**LOG_API_REQUESTS=true:**
+```
+🚀 API REQUEST: OpenAI.vision
+   📋 model: gpt-4o-mini
+   📋 image_size: 1920x1080
+📥 API RESPONSE: OpenAI.vision (2.34s)
+   📋 prompt_tokens: 1250
+   📋 completion_tokens: 89
+```
+
+**LOG_DATABASE_OPS=true:**
+```
+🗄️ DB: CREATE documents
+   📋 doc_uid: 550e8400-e29b-41d4-a716-446655440000
+🗄️ DB: CREATE chunks
+   📋 count: 12
+🗄️ DB: SEARCH vectors
+   📋 results_found: 5
+```
+
+**LOG_PROCESSING_DETAILS=true:**
+```
+🔄 PROCESS: PDF extraction
+   📋 page_count: 25
+🔄 PROCESS: Image processing completed
+   📋 successful: 3
+   📋 total: 3
 ```
 
 ---

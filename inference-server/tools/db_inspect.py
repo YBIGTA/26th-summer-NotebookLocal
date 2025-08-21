@@ -9,21 +9,19 @@ import sys
 from pathlib import Path
 
 # Add the project root to Python path
-project_root = Path(__file__).parent
+project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.database.connection import get_session
+from src.database.connection import SessionLocal
 from src.database.models import Document, Chunk
 from sqlalchemy import func
-import json
-from datetime import datetime
 
 def inspect_documents():
     """Show all documents in the database"""
     print("🔍 Inspecting documents table...")
     
     try:
-        session = get_session()
+        session = SessionLocal()
         
         # Get document count
         total_docs = session.query(func.count(Document.doc_uid)).scalar()
@@ -68,7 +66,7 @@ def inspect_chunks(document_id=None, limit=10):
     print(f"🔍 Inspecting chunks table (limit: {limit})...")
     
     try:
-        session = get_session()
+        session = SessionLocal()
         
         # Get chunk count
         query = session.query(func.count(Chunk.chunk_uid))
@@ -116,7 +114,7 @@ def inspect_stats():
     print("🔍 Database statistics...")
     
     try:
-        session = get_session()
+        session = SessionLocal()
         
         # Document stats
         doc_count = session.query(func.count(Document.doc_uid)).scalar()
@@ -170,7 +168,7 @@ def search_documents(search_term):
     print(f"🔍 Searching for: '{search_term}'...")
     
     try:
-        session = get_session()
+        session = SessionLocal()
         
         # Search in document titles
         title_matches = session.query(Document).filter(
@@ -225,7 +223,7 @@ def clear_database():
     print("🗑️  Clearing database...")
     
     try:
-        session = get_session()
+        session = SessionLocal()
         
         # Delete in correct order due to foreign keys
         chunk_count = session.query(Chunk).count()

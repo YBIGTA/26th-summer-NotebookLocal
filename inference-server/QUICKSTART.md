@@ -1,6 +1,6 @@
 # 🚀 QuickStart Guide
 
-Get your hybrid PostgreSQL + Weaviate RAG system running in 3 steps!
+Get your comprehensive PDF processing and RAG system running in 3 steps!
 
 ## ⚡ 3-Step Setup
 
@@ -10,13 +10,22 @@ Get your hybrid PostgreSQL + Weaviate RAG system running in 3 steps!
 ./setup_local_dev.sh
 ```
 
-### 2. Configure API Keys
+### 2. Configure Environment
 ```bash
+# Copy environment template
+cp .env.example .env
+
 # Edit environment variables
 nano .env
 
 # Add your OpenAI API key:
 OPENAI_API_KEY=your_actual_api_key_here
+
+# Optional: Enable debug logging for troubleshooting
+DEBUG_MODE=true
+LOG_API_REQUESTS=true
+LOG_DATABASE_OPS=true
+LOG_PROCESSING_DETAILS=true
 ```
 
 ### 3. Start Server
@@ -28,7 +37,8 @@ python start_server.py
 ## 🎉 That's It!
 
 Your server is now running at:
-- **API**: http://localhost:8000
+- **API**: http://localhost:8000/docs (Swagger UI)
+- **Server**: http://localhost:8000
 - **PostgreSQL**: localhost:5432
 - **Weaviate**: http://localhost:8080
 
@@ -75,17 +85,33 @@ docker-compose exec postgres psql -U inference_user -d inference_db
 
 ## 📚 What You Get
 
-✅ **Hybrid Search**: BM25 + semantic search via Weaviate  
-✅ **Metadata Management**: Rich document info in PostgreSQL  
-✅ **Auto-initialization**: Tables created automatically  
-✅ **API Endpoints**: Full REST API for document processing  
-✅ **Obsidian Integration**: Ready for Obsidian plugin  
-✅ **Citation Support**: Page numbers and source tracking  
+✅ **Dual Text Extraction**: Direct PDF text + AI vision for images/diagrams  
+✅ **Hybrid Storage**: PostgreSQL metadata + Weaviate vector search  
+✅ **Advanced Search**: BM25 + semantic search with metadata filtering  
+✅ **Multi-LLM Support**: OpenAI, Anthropic, and local model routing  
+✅ **Korean PDF Support**: Advanced PyMuPDF integration  
+✅ **Unified Logging**: Comprehensive monitoring and debugging  
+✅ **API Endpoints**: Full REST API + Obsidian plugin integration  
+✅ **Auto-initialization**: Tables and schemas created automatically  
+
+## 🔍 Performance Monitoring
+
+With debug logging enabled, you'll see:
+```
+🚀 API REQUEST: OpenAI.vision
+📥 API RESPONSE: OpenAI.vision (2.34s)
+🗄️ DB: CREATE documents  
+⏱️ START: Process 5 images
+✅ SUCCESS: Process 5 images (12.45s)
+```
+
+This helps you identify performance bottlenecks (like slow OpenAI Vision API calls).
 
 ## 🆘 Need Help?
 
 - **Setup Issues**: Check [DATABASE_SETUP.md](DATABASE_SETUP.md)
-- **API Issues**: Visit http://localhost:8000/docs for Swagger UI
+- **API Issues**: Visit http://localhost:8000/docs for Swagger UI  
+- **Performance Issues**: Enable debug logging and see [MONITORING_GUIDE.md](MONITORING_GUIDE.md)
 - **Database Issues**: See troubleshooting in DATABASE_SETUP.md
 
 Happy coding! 🎯

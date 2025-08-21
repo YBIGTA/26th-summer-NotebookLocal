@@ -4,15 +4,13 @@ from typing import Dict, List, Any, Optional, Union, Tuple
 import hashlib
 import uuid
 from pathlib import Path
-import logging
 
 from sqlalchemy.orm import Session
 from ..database.connection import get_db
 from ..database.models import Document, Chunk
 from .vector_store import WeaviateVectorStore, SimpleVectorStore
 from ..processors.embedder import Embedder
-
-logger = logging.getLogger(__name__)
+from ..utils.logger import UnifiedLogger
 
 
 class HybridStore:
@@ -39,94 +37,124 @@ class HybridStore:
     ) -> Dict[str, Any]:
         """Store document and chunks in both PostgreSQL and Weaviate."""
         
-        db = next(get_db())
-        try:
-            # Calculate file checksum
-            checksum = self._calculate_checksum(file_path)
-            
-            # Check if document already exists
-            existing_doc = db.query(Document).filter(Document.checksum == checksum).first()
-            if existing_doc:
-                logger.info(f"Document with checksum {checksum} already exists")
-                return {
-                    "doc_uid": str(existing_doc.doc_uid),
-                    "status": "exists",
-                    "chunks": len(existing_doc.chunks),
-                    "images": 0
-                }
-            
-            # Create document record
-            doc_uid = uuid.uuid4()
-            document = Document(
-                doc_uid=doc_uid,
-                title=title or Path(file_path).stem,
-                author=author,
-                source_type=source_type,
-                path=file_path,
-                lang=lang,
-                tags=tags or [],
-                page_count=page_count,
-                checksum=checksum
-            )
-            db.add(document)
-            db.flush()  # Get the ID without committing
-            
-            # Store chunks in PostgreSQL and Weaviate
-            chunk_records = []
-            weaviate_texts = []
-            weaviate_metadatas = []
-            
-            for i, chunk_text in enumerate(chunks):
-                chunk_id = uuid.uuid4()
+        with UnifiedLogger.time_operation(f"Store document: {Path(file_path).name}", {
+            "chunks_count": len(chunks),
+            "source_type": source_type,
+            "lang": lang
+        }):
+            db = next(get_db())
+            try:
+                # Calculate file checksum
+                with UnifiedLogger.time_operation("Calculate file checksum"):
+                    checksum = self._calculate_checksum(file_path)
                 
-                # Create chunk record for PostgreSQL
-                chunk_record = Chunk(
-                    chunk_id=chunk_id,
-                    doc_uid=doc_uid,
-                    text=chunk_text,
-                    order_index=i,
-                    tokens=len(chunk_text.split()) * 1.3  # Rough token estimate
-                )
-                chunk_records.append(chunk_record)
-                db.add(chunk_record)
+                # Check if document already exists
+                UnifiedLogger.db_operation("CHECK", "documents", {"checksum": checksum})
+                existing_doc = db.query(Document).filter(Document.checksum == checksum).first()
+                if existing_doc:
+                    UnifiedLogger.db_operation("FOUND EXISTING", "documents", {
+                        "doc_uid": str(existing_doc.doc_uid),
+                        "chunks": len(existing_doc.chunks)
+                    })
+                    return {
+                        "doc_uid": str(existing_doc.doc_uid),
+                        "status": "exists",
+                        "chunks": len(existing_doc.chunks),
+                        "images": 0
+                    }
                 
-                # Prepare for Weaviate
-                weaviate_texts.append(chunk_text)
-                weaviate_metadatas.append({
-                    "chunk_id": str(chunk_id),
+                # Create document record
+                doc_uid = uuid.uuid4()
+                UnifiedLogger.db_operation("CREATE", "documents", {
                     "doc_uid": str(doc_uid),
-                    "order_index": i
+                    "title": title or Path(file_path).stem,
+                    "chunks_to_store": len(chunks)
                 })
-            
-            # Generate embeddings and store in Weaviate
-            if chunks:
-                embeddings = self.embedder.embed(weaviate_texts)
                 
-                if isinstance(self.vector_store, WeaviateVectorStore):
-                    self.vector_store.add_texts(
-                        texts=weaviate_texts,
-                        embeddings=embeddings,
-                        metadatas=weaviate_metadatas
-                    )
-                else:  # SimpleVectorStore
-                    self.vector_store.add_texts(weaviate_texts, embeddings)
-            
-            # Commit all changes
-            db.commit()
-            
-            return {
-                "doc_uid": str(doc_uid),
-                "status": "created",
-                "chunks": len(chunks),
-                "images": 0  # TODO: Handle images separately
-            }
-            
-        except Exception as e:
-            db.rollback()
-            logger.error(f"Error storing document: {e}")
-            raise
-        finally:
-            db.close()
+                document = Document(
+                    doc_uid=doc_uid,
+                    title=title or Path(file_path).stem,
+                    author=author,
+                    source_type=source_type,
+                    path=file_path,
+                    lang=lang,
+                    tags=tags or [],
+                    page_count=page_count,
+                    checksum=checksum
+                )
+                db.add(document)
+                db.flush()  # Get the ID without committing
+                
+                # Store chunks in PostgreSQL and Weaviate
+                with UnifiedLogger.time_operation(f"Process {len(chunks)} chunks"):
+                    chunk_records = []
+                    weaviate_texts = []
+                    weaviate_metadatas = []
+                    
+                    for i, chunk_text in enumerate(chunks):
+                        chunk_id = uuid.uuid4()
+                        
+                        # Create chunk record for PostgreSQL
+                        chunk_record = Chunk(
+                            chunk_id=chunk_id,
+                            doc_uid=doc_uid,
+                            text=chunk_text,
+                            order_index=i,
+                            tokens=len(chunk_text.split()) * 1.3  # Rough token estimate
+                        )
+                        chunk_records.append(chunk_record)
+                        db.add(chunk_record)
+                        
+                        # Prepare for Weaviate
+                        weaviate_texts.append(chunk_text)
+                        weaviate_metadatas.append({
+                            "chunk_id": str(chunk_id),
+                            "doc_uid": str(doc_uid),
+                            "order_index": i
+                        })
+                    
+                    UnifiedLogger.db_operation("CREATE", "chunks", {"count": len(chunks)})
+                
+                # Generate embeddings and store in Weaviate
+                if chunks:
+                    with UnifiedLogger.time_operation("Generate embeddings"):
+                        embeddings = self.embedder.embed(weaviate_texts)
+                    
+                    with UnifiedLogger.time_operation("Store in vector database"):
+                        if isinstance(self.vector_store, WeaviateVectorStore):
+                            self.vector_store.add_texts(
+                                texts=weaviate_texts,
+                                embeddings=embeddings,
+                                metadatas=weaviate_metadatas
+                            )
+                        else:  # SimpleVectorStore
+                            self.vector_store.add_texts(weaviate_texts, embeddings)
+                        
+                        UnifiedLogger.db_operation("CREATE", "vectors", {"count": len(embeddings)})
+                
+                # Commit all changes
+                with UnifiedLogger.time_operation("Commit database transaction"):
+                    db.commit()
+                
+                UnifiedLogger.processing_step("Document storage completed", {
+                    "doc_uid": str(doc_uid),
+                    "status": "created",
+                    "chunks": len(chunks)
+                })
+                
+                return {
+                    "doc_uid": str(doc_uid),
+                    "status": "created",
+                    "chunks": len(chunks),
+                    "images": 0  # TODO: Handle images separately
+                }
+                
+            except Exception as e:
+                db.rollback()
+                UnifiedLogger.log(f"❌ Error storing document: {e}", level="ERROR")
+                raise
+            finally:
+                db.close()
     
     def search(
         self,
@@ -137,65 +165,86 @@ class HybridStore:
     ) -> List[Dict[str, Any]]:
         """Hybrid search: filter by metadata, then vector search."""
         
-        db = next(get_db())
-        try:
-            # Step 1: Filter documents by metadata if filters provided
-            eligible_doc_uids = None
-            if filters:
-                eligible_doc_uids = self._filter_documents(db, filters)
-                if not eligible_doc_uids:
-                    return []  # No documents match filters
-            
-            # Step 2: Vector search in Weaviate
-            if isinstance(self.vector_store, WeaviateVectorStore):
-                # Add doc_uid filter for Weaviate if we have filtered documents
-                weaviate_filter = None
-                if eligible_doc_uids:
-                    weaviate_filter = {
-                        "path": ["doc_uid"],
-                        "operator": "ContainsAny",
-                        "valueTextArray": [str(uid) for uid in eligible_doc_uids]
-                    }
+        with UnifiedLogger.time_operation(f"Hybrid search: '{query[:50]}...'", {
+            "k": k,
+            "filters": bool(filters),
+            "alpha": alpha
+        }):
+            db = next(get_db())
+            try:
+                # Step 1: Filter documents by metadata if filters provided
+                eligible_doc_uids = None
+                if filters:
+                    with UnifiedLogger.time_operation("Filter documents by metadata"):
+                        eligible_doc_uids = self._filter_documents(db, filters)
+                        UnifiedLogger.db_operation("FILTER", "documents", {
+                            "eligible_docs": len(eligible_doc_uids),
+                            "filters": filters
+                        })
+                        if not eligible_doc_uids:
+                            return []  # No documents match filters
                 
-                vector_results = self.vector_store.similarity_search(
-                    query=query,
-                    k=k,
-                    alpha=alpha
-                )
-            else:  # SimpleVectorStore
-                query_embedding = self.embedder.embed([query])[0]
-                vector_results = self.vector_store.similarity_search(query_embedding, k)
-                # Convert format to match WeaviateVectorStore output
-                vector_results = [{"text": text, "score": score} for text, score in vector_results]
-            
-            # Step 3: Enrich results with PostgreSQL metadata
-            enriched_results = []
-            for result in vector_results:
-                # Find chunk by text (or chunk_id if available in metadata)
-                chunk = db.query(Chunk).filter(Chunk.text == result["text"]).first()
-                if chunk:
-                    doc = chunk.document
-                    enriched_result = {
-                        **result,
-                        "chunk_id": str(chunk.chunk_id),
-                        "doc_uid": str(chunk.doc_uid),
-                        "order_index": chunk.order_index,
-                        "page": chunk.page,
-                        "section": chunk.section,
-                        "document": {
-                            "title": doc.title,
-                            "author": doc.author,
-                            "source_type": doc.source_type,
-                            "lang": doc.lang,
-                            "tags": doc.tags or []
-                        }
-                    }
-                    enriched_results.append(enriched_result)
-            
-            return enriched_results
-            
-        finally:
-            db.close()
+                # Step 2: Vector search in Weaviate
+                with UnifiedLogger.time_operation(f"Vector search (k={k})"):
+                    if isinstance(self.vector_store, WeaviateVectorStore):
+                        # Add doc_uid filter for Weaviate if we have filtered documents
+                        weaviate_filter = None
+                        if eligible_doc_uids:
+                            weaviate_filter = {
+                                "path": ["doc_uid"],
+                                "operator": "ContainsAny",
+                                "valueTextArray": [str(uid) for uid in eligible_doc_uids]
+                            }
+                        
+                        vector_results = self.vector_store.similarity_search(
+                            query=query,
+                            k=k,
+                            alpha=alpha
+                        )
+                    else:  # SimpleVectorStore
+                        query_embedding = self.embedder.embed([query])[0]
+                        vector_results = self.vector_store.similarity_search(query_embedding, k)
+                        # Convert format to match WeaviateVectorStore output
+                        vector_results = [{"text": text, "score": score} for text, score in vector_results]
+                    
+                    UnifiedLogger.db_operation("SEARCH", "vectors", {
+                        "results_found": len(vector_results),
+                        "query_preview": query[:50]
+                    })
+                
+                # Step 3: Enrich results with PostgreSQL metadata
+                with UnifiedLogger.time_operation("Enrich results with metadata"):
+                    enriched_results = []
+                    for result in vector_results:
+                        # Find chunk by text (or chunk_id if available in metadata)
+                        chunk = db.query(Chunk).filter(Chunk.text == result["text"]).first()
+                        if chunk:
+                            doc = chunk.document
+                            enriched_result = {
+                                **result,
+                                "chunk_id": str(chunk.chunk_id),
+                                "doc_uid": str(chunk.doc_uid),
+                                "order_index": chunk.order_index,
+                                "page": chunk.page,
+                                "section": chunk.section,
+                                "document": {
+                                    "title": doc.title,
+                                    "author": doc.author,
+                                    "source_type": doc.source_type,
+                                    "lang": doc.lang,
+                                    "tags": doc.tags or []
+                                }
+                            }
+                            enriched_results.append(enriched_result)
+                    
+                    UnifiedLogger.db_operation("ENRICH", "metadata", {
+                        "enriched_results": len(enriched_results)
+                    })
+                
+                return enriched_results
+                
+            finally:
+                db.close()
     
     def get_documents(
         self,
