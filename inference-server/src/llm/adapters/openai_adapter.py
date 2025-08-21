@@ -1,8 +1,13 @@
 from ..core.base_adapter import BaseAdapter
 from ..models.requests import ChatRequest
 from ..models.responses import ChatResponse, Choice, Message, Usage
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.messages import AIMessage
+from openai import OpenAI
+from typing import List
+import base64
+import io
+from PIL import Image
 import os
 import uuid
 import time
@@ -29,6 +34,9 @@ class OpenAIAdapter(BaseAdapter):
             timeout=self.config.get('timeout', 60),
             max_retries=self.config.get('max_retries', 2)
         )
+        
+        # Initialize OpenAI client for vision and embeddings
+        self.openai_client = OpenAI(api_key=api_key)
         
         logger.info(f"Initialized OpenAIAdapter with default model: {self.config.get('default_model')}")
     
@@ -69,6 +77,53 @@ class OpenAIAdapter(BaseAdapter):
             }]
         }
         return f"data: {json.dumps(chunk_data)}\n\n"
+    
+    def embed(self, texts: List[str], model: str) -> List[List[float]]:
+        """Generate embeddings using OpenAI embedding model"""
+        try:
+            api_key = os.getenv('OPENAI_API_KEY')
+            embeddings_client = OpenAIEmbeddings(
+                model=model,
+                openai_api_key=api_key
+            )
+            return embeddings_client.embed_documents(texts)
+        except Exception as e:
+            logger.error(f"OpenAI embedding failed: {e}")
+            raise
+    
+    async def describe_images(self, images: List[Image.Image], model: str, prompt: str = "Describe this image") -> List[str]:
+        """Generate descriptions for images using OpenAI Vision API"""
+        descriptions = []
+        
+        for img in images:
+            try:
+                # Convert PIL Image to base64
+                buffered = io.BytesIO()
+                img.save(buffered, format="PNG")
+                img_bytes = buffered.getvalue()
+                img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+                
+                # Call OpenAI Vision API
+                response = self.openai_client.chat.completions.create(
+                    model=model,
+                    messages=[{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_base64}"}}
+                        ]
+                    }],
+                    max_tokens=500
+                )
+                
+                description = response.choices[0].message.content
+                descriptions.append(description)
+                
+            except Exception as e:
+                logger.error(f"OpenAI vision processing failed: {e}")
+                descriptions.append(f"[Image processing failed: {str(e)}]")
+        
+        return descriptions
     
     async def _health_check_implementation(self) -> bool:
         """Check OpenAI API availability via LangChain"""

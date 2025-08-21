@@ -1,25 +1,22 @@
-# Adapter configurations
+# Provider-level adapter configurations
 adapters:
   openai:
     type: openai
     enabled: true
-    config_file: openai.yaml
+    config_file: provider_openai.yaml
     priority: 2
+    models_dir: "models/openai"
     
-  qwen_text:
-    type: qwen_text
+  qwen:
+    type: qwen
     enabled: true
-    config_file: qwen_text.yaml
+    config_file: provider_qwen.yaml
     priority: 1  # Prefer local
-    
-  qwen_vision:
-    type: qwen_vision
-    enabled: true
-    config_file: qwen_vision.yaml
-    priority: 1
+    models_dir: "models/qwen"
     
   anthropic:
     type: anthropic
     enabled: true
-    config_file: anthropic.yaml
+    config_file: provider_anthropic.yaml
     priority: 3
+    models_dir: "models/anthropic"

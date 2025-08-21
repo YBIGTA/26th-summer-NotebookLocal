@@ -1,0 +1,66 @@
+# Qwen3-embedding-0.6B local embedding model configuration
+name: Qwen3-embedding-0.6B
+provider: qwen
+model_id: Qwen3-embedding-0.6B
+
+# Model capabilities
+capabilities:
+  chat: false
+  vision: false
+  function_calling: false
+  streaming: false
+  embeddings: true
+
+# Local model settings
+model_path: "./models/Qwen3-embedding-0.6B"
+served_model_name: "Qwen3-embedding-0.6B"
+
+# vLLM server settings (for embedding models)
+server:
+  port: 8003
+  host: "127.0.0.1"
+  auto_start: true
+  timeout: 30
+
+# vLLM configuration (embedding optimized)
+vllm_config:
+  max_model_len: 8192
+  quantization: "none"  # Embeddings usually don't need quantization
+  load_format: "auto"
+  gpu_memory_utilization: 0.6  # Lower for embedding models
+  dtype: "auto"
+  max_num_seqs: 32  # Higher for embedding batch processing
+  tensor_parallel_size: 1
+  trust_remote_code: true
+  disable_log_requests: true
+  disable_custom_all_reduce: true
+  enforce_eager: true
+
+# Embedding-specific settings
+embedding_dimension: 1536  # Typical Qwen embedding dimension
+max_input_tokens: 8192
+
+# Environment variables for vLLM
+environment:
+  PYTORCH_CUDA_ALLOC_CONF: "max_split_size_mb:128"
+  VLLM_SKIP_P2P_CHECK: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  CUDA_LAUNCH_BLOCKING: "0"
+  PYTORCH_NO_CUDA_MEMORY_CACHING: "1"
+  VLLM_DISABLE_CUDA_GRAPHS: "1"
+  VLLM_USE_V1: "0"
+  VLLM_DISABLE_COMPILATION: "1"
+  TORCH_COMPILE_DISABLE: "1"
+  VLLM_WORKER_MULTIPROC_METHOD: "spawn"
+
+# Context window
+context_window: 8192
+
+# Cost information (local model - no API costs)
+cost:
+  input: 0.0
+  output: 0.0
+
+# Model description
+description: "Local Qwen3 embedding model for semantic search and document retrieval"
+use_cases: ["embeddings", "semantic_search", "document_retrieval", "local_inference"]

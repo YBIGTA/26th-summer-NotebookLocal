@@ -1,0 +1,33 @@
+# Anthropic Claude 3.5 Sonnet model configuration
+name: claude-3-5-sonnet-20241022
+provider: anthropic
+model_id: claude-3-5-sonnet-20241022
+
+# Model capabilities
+capabilities:
+  chat: true
+  vision: true
+  function_calling: true
+  streaming: true
+  embeddings: false
+
+# Model parameters
+temperature: 0.7
+max_tokens: 4096
+top_p: 1.0
+
+# API settings
+timeout: 60
+max_retries: 2
+
+# Context window
+context_window: 200000
+
+# Cost information (per 1M tokens)
+cost:
+  input: 3.00   # USD per 1M input tokens
+  output: 15.00 # USD per 1M output tokens
+
+# Model description
+description: "Anthropic's most powerful model with excellent reasoning and coding"
+use_cases: ["complex_reasoning", "coding", "analysis", "creative_writing"]

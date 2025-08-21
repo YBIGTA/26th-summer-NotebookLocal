@@ -3,7 +3,7 @@ from ..models.requests import ChatRequest
 from ..models.responses import ChatResponse, Choice, Message, Usage
 import aiohttp
 import asyncio
-from typing import AsyncGenerator
+from typing import AsyncGenerator, List
 import uuid
 import time
 import logging
@@ -333,6 +333,14 @@ class QwenTextAdapter(BaseAdapter):
             logger.error(f"❌ Health check failed for {self.name}: {e}")
             return False
 
+    def embed(self, texts: List[str], model: str) -> List[List[float]]:
+        """Generate embeddings - not supported by Qwen text adapter"""
+        raise NotImplementedError("Qwen text adapter does not support embeddings. Use Qwen embedding adapter instead.")
+    
+    async def describe_images(self, images: List, model: str, prompt: str = "Describe this image") -> List[str]:
+        """Generate image descriptions - not supported by Qwen text adapter"""
+        raise NotImplementedError("Qwen text adapter does not support vision. Use Qwen vision adapter instead.")
+    
     async def _health_check_implementation(self) -> bool:
         """Check if Qwen text model can be used (server running or can auto-start)"""
         try:

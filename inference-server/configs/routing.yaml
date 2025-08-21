@@ -1,33 +1,20 @@
-# Routing rules configuration - Optimized for Korean PDF processing
+# Routing rules configuration - Based on actual model configs in configs/models/
 rules:
-  # Explicit model mappings
+  # Explicit model mappings - ONLY models that have config files
   explicit_models:
-    - models: [gpt-4, gpt-4-turbo, gpt-3.5-turbo]
+    # OpenAI models (configs/models/openai/)
+    - models: [gpt-4o-mini, text-embedding-3-large]
       adapter: openai
-    - models: [claude-3-5-sonnet-20241022, claude-3-opus-20240229, claude-3-sonnet-20240229, claude-3-5-haiku-20241022, claude-3-haiku-20240307, claude]
+    
+    # Anthropic models (configs/models/anthropic/)
+    - models: [claude-3-5-sonnet-20241022]
       adapter: anthropic
-    - models: [Qwen3-30B-A3B-bnb-4bit, qwen_text, qwen-text]
-      adapter: qwen_text
-    - models: [Qwen2.5-VL-7B-Instruct-unsloth-bnb-4bit, qwen_vision, qwen-vision]
-      adapter: qwen_vision
+    
+    # Qwen models (configs/models/qwen/)
+    - models: [Qwen3-14B-Instruct-bnb-4bit, Qwen2.5-VL-7B-Instruct-unsloth-bnb-4bit, Qwen3-embedding-0.6B]
+      adapter: qwen
   
-  # Content-based routing
-  vision_default: qwen_vision        # Korean PDF images and diagrams
-  
-  # Complexity-based routing (reduced threshold for better responses)
-  complexity_threshold: 1000        # characters (much lower for better routing)
-  complex_default: anthropic        # Use Claude for complex reasoning tasks
-  
-  # Default adapter for simple requests - Korean optimized
-  default_adapter: qwen_text         # Local Korean model for fast responses
-  
-  # Korean-specific routing (future enhancement)
-  korean_optimized: true
-  korean_default: qwen_text          # Qwen models are better with Korean
-
-# Fallback chain - Korean PDF optimized
-fallback_chain:
-  - qwen_text     # Local Korean model, fast and always available  
-  - qwen_vision   # For vision tasks or if text model fails
-  - anthropic     # High-quality reasoning and Korean understanding
-  - openai        # Last resort
+  # Content-based routing - using only available models
+  chat_default: gpt-4o-mini                    # Chat model we have config for
+  vision_default: gpt-4o-mini       # Vision model we have config for
+  embedding_default: text-embedding-3-large                         # Embedding model we have config for

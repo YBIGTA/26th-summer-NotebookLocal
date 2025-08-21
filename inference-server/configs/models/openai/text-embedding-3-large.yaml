@@ -1,0 +1,29 @@
+# OpenAI text-embedding-3-large model configuration
+name: text-embedding-3-large
+provider: openai
+model_id: text-embedding-3-large
+
+# Model capabilities
+capabilities:
+  chat: false
+  vision: false
+  function_calling: false
+  streaming: false
+  embeddings: true
+
+# Embedding-specific settings
+embedding_dimension: 3072
+max_input_tokens: 8191
+
+# API settings
+timeout: 30
+max_retries: 2
+
+# Cost information (per 1M tokens)
+cost:
+  input: 0.13  # USD per 1M tokens
+  output: 0.0  # No output cost for embeddings
+
+# Model description
+description: "OpenAI's most powerful embedding model for semantic search"
+use_cases: ["semantic_search", "document_retrieval", "similarity_analysis"]

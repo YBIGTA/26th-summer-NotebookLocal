@@ -1,9 +1,8 @@
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Union, List
 from .base_adapter import BaseAdapter
 from ..adapters.openai_adapter import OpenAIAdapter
 from ..adapters.anthropic_adapter import AnthropicAdapter
-from ..adapters.qwen_text_adapter import QwenTextAdapter
-from ..adapters.qwen_vision_adapter import QwenVisionAdapter
+from ..adapters.qwen_adapter import QwenAdapter
 from ..models.requests import ChatRequest
 from ..models.responses import ChatResponse
 from ..utils.config_loader import ConfigLoader
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class LLMRouter:
-    """Main router for directing requests to appropriate adapters"""
+    """Universal router for directing chat, embedding, and vision requests to appropriate adapters"""
     
     def __init__(self):
         self.config_loader = ConfigLoader()
@@ -38,10 +37,8 @@ class LLMRouter:
                     self.adapters[adapter_name] = OpenAIAdapter(config_file)
                 elif adapter_type == 'anthropic':
                     self.adapters[adapter_name] = AnthropicAdapter(config_file)
-                elif adapter_type == 'qwen_text':
-                    self.adapters[adapter_name] = QwenTextAdapter(config_file)
-                elif adapter_type == 'qwen_vision':
-                    self.adapters[adapter_name] = QwenVisionAdapter(config_file)
+                elif adapter_type == 'qwen':
+                    self.adapters[adapter_name] = QwenAdapter(config_file)
                 else:
                     logger.error(f"Unknown adapter type: {adapter_type}")
                     continue
@@ -66,7 +63,7 @@ class LLMRouter:
                 return await adapter.complete(request)
         except Exception as e:
             logger.error(f"Error in adapter {adapter_name}: {e}")
-            return await self._fallback(request, exclude=[adapter_name])
+            raise AdapterNotAvailableException(f"Adapter {adapter_name} failed: {e}")
     
     def _select_adapter(self, request: ChatRequest) -> str:
         """Select adapter based on routing rules"""
@@ -80,12 +77,8 @@ class LLMRouter:
         if self._has_vision_content(request):
             return rules['vision_default']
         
-        total_length = sum(len(str(msg.content)) for msg in request.messages)
-        
-        if total_length > rules['complexity_threshold']:
-            return rules['complex_default']
-        
-        return rules['default_adapter']
+        # Default to chat model for all other requests
+        return rules['chat_default']
     
     def _has_vision_content(self, request: ChatRequest) -> bool:
         """Check if request contains vision content"""
@@ -96,20 +89,60 @@ class LLMRouter:
                         return True
         return False
     
-    async def _fallback(self, request: ChatRequest, exclude: list):
-        """Fallback to alternative adapter"""
-        fallback_chain = self.routing_config['fallback_chain']
+    
+    def embed(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings using configured embedding model"""
+        from typing import List
         
-        for adapter_name in fallback_chain:
-            if adapter_name not in exclude and adapter_name in self.adapters:
-                try:
-                    adapter = self.adapters[adapter_name]
-                    return await adapter.complete(request)
-                except Exception as e:
-                    logger.warning(f"Fallback adapter {adapter_name} failed: {e}")
-                    continue
+        # Get default embedding model from routing config
+        embedding_model = self.routing_config['rules']['embedding_default']
         
-        raise Exception("All adapters failed")
+        # Find the adapter for this model
+        adapter_name = self._get_adapter_for_model(embedding_model)
+        
+        if adapter_name not in self.adapters:
+            raise AdapterNotAvailableException(f"Embedding adapter {adapter_name} not available")
+        
+        adapter = self.adapters[adapter_name]
+        
+        # For now, use the adapter's embedding capability
+        # This will need to be implemented in each adapter
+        if hasattr(adapter, 'embed'):
+            return adapter.embed(texts, embedding_model)
+        else:
+            raise AdapterNotAvailableException(f"Adapter {adapter_name} does not support embeddings")
+    
+    async def vision(self, images: List, prompt: str = "Describe this image") -> List[str]:
+        """Generate descriptions for images using configured vision model"""
+        from typing import List
+        
+        # Get default vision model from routing config
+        vision_model = self.routing_config['rules']['vision_default']
+        
+        # Find the adapter for this model
+        adapter_name = self._get_adapter_for_model(vision_model)
+        
+        if adapter_name not in self.adapters:
+            raise AdapterNotAvailableException(f"Vision adapter {adapter_name} not available")
+        
+        adapter = self.adapters[adapter_name]
+        
+        # For now, use the adapter's vision capability
+        # This will need to be implemented in each adapter
+        if hasattr(adapter, 'describe_images'):
+            return await adapter.describe_images(images, vision_model, prompt)
+        else:
+            raise AdapterNotAvailableException(f"Adapter {adapter_name} does not support vision")
+    
+    def _get_adapter_for_model(self, model_name: str) -> str:
+        """Get adapter name for a specific model"""
+        rules = self.routing_config['rules']
+        
+        for rule in rules['explicit_models']:
+            if model_name in rule['models']:
+                return rule['adapter']
+        
+        raise AdapterNotAvailableException(f"No adapter found for model {model_name}")
     
     async def health_check(self) -> Dict[str, bool]:
         """Check health of all adapters"""

@@ -105,8 +105,9 @@ class QAWorkflow:
                 max_tokens=2048
             )
             
-            # Use asyncio to run the async LLM router
-            response = asyncio.run(self.llm_router.route(request))
+            # Call async LLM router from sync context
+            loop = asyncio.get_event_loop()
+            response = loop.run_until_complete(self.llm_router.route(request))
             
             if response.choices and len(response.choices) > 0:
                 state["answer"] = response.choices[0].message.content

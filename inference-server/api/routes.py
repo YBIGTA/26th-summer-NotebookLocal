@@ -8,11 +8,12 @@ import json
 import asyncio
 import uuid
 import time
+import logging
 import traceback
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
 
-from src.utils.logger import UnifiedLogger, log_info, log_error
+logger = logging.getLogger(__name__)
 
 from src.main import LectureProcessor
 from src.llm.core.router import LLMRouter
@@ -95,89 +96,59 @@ class IndexStatus(BaseModel):
 @router.post("/process", response_model=ProcessResponse)
 async def process_file(file: UploadFile = File(...)):
     """Process a PDF file and store it in the vector database."""
-    request_id = str(uuid.uuid4())[:8]
+    if not file or not file.filename:
+        raise HTTPException(status_code=400, detail="No file uploaded")
+
+    filename = file.filename
     
-    with UnifiedLogger.time_operation(f"API /process - {file.filename if file else 'None'}", {
-        "request_id": request_id,
-        "filename": file.filename if file else None
-    }):
-        if not file or not file.filename:
-            log_error("No file uploaded", {"request_id": request_id})
-            raise HTTPException(status_code=400, detail="No file uploaded")
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Invalid file type. Only PDFs are supported.")
 
-        filename = file.filename
+    try:
+        # Read file contents
+        contents = await file.read()
         
-        if not filename.lower().endswith(".pdf"):
-            log_error(f"Invalid file type: {filename}", {"request_id": request_id})
-            raise HTTPException(status_code=400, detail="Invalid file type. Only PDFs are supported.")
+        if not contents:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-        try:
-            # Read file contents
-            with UnifiedLogger.time_operation("Read uploaded file"):
-                contents = await file.read()
-            
-            if not contents:
-                log_error("Uploaded file is empty", {"request_id": request_id})
-                raise HTTPException(status_code=400, detail="Uploaded file is empty")
-
-            log_info("File read successfully", {
-                "request_id": request_id,
-                "size_bytes": len(contents)
-            })
-
-            # Create temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=Path(filename).suffix) as tmp:
-                tmp.write(contents)
-                temp_path = tmp.name
-            
-            # Process the document
-            with UnifiedLogger.time_operation("Document processing"):
-                result = processor.process_document(temp_path)
-            
-            # Clean up temporary file
-            os.unlink(temp_path)
-            
-            log_info("API processing completed", {
-                "request_id": request_id,
-                "result": result
-            })
-            
-            return ProcessResponse(
-                filename=filename,
-                chunks=result.get("chunks", 0),
-                images=result["images"],
-                status="success"
-            )
-            
-        except HTTPException:
-            raise
-        except Exception as exc:
-            # Clean up temp file if it exists
-            if 'temp_path' in locals():
-                try:
-                    os.unlink(temp_path)
-                except:
-                    pass
-            log_error(f"Processing failed: {str(exc)}", {"request_id": request_id})
-            raise HTTPException(status_code=500, detail=f"Failed to process file: {str(exc)}") from exc
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(filename).suffix) as tmp:
+            tmp.write(contents)
+            temp_path = tmp.name
+        
+        # Process the document
+        result = processor.process_document(temp_path)
+        
+        # Clean up temporary file
+        os.unlink(temp_path)
+        
+        return ProcessResponse(
+            filename=filename,
+            chunks=result.get("chunks", 0),
+            images=result["images"],
+            status="success"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # Clean up temp file if it exists
+        if 'temp_path' in locals():
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+        raise HTTPException(status_code=500, detail=f"Failed to process file: {str(exc)}") from exc
 
 
 @router.post("/ask", response_model=QuestionResponse)
 async def ask_question(request: QuestionRequest):
     """Ask a question about the processed documents."""
-    with UnifiedLogger.time_operation(f"API /ask - '{request.question[:50]}...'"):
-        try:
-            answer = processor.ask_question(request.question)
-            log_info("Question answered successfully", {
-                "question_preview": request.question[:50],
-                "answer_length": len(answer)
-            })
-            return QuestionResponse(question=request.question, answer=answer)
-        except Exception as exc:
-            log_error(f"Failed to answer question: {str(exc)}", {
-                "question": request.question[:100]
-            })
-            raise HTTPException(status_code=500, detail=f"Failed to answer question: {str(exc)}") from exc
+    try:
+        answer = processor.ask_question(request.question)
+        return QuestionResponse(question=request.question, answer=answer)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to answer question: {str(exc)}") from exc
 
 
 @router.get("/health")

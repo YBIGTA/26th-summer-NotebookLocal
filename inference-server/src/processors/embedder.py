@@ -1,27 +1,52 @@
-"""Embedding utilities built on top of LangChain."""
+"""Universal embedding utilities using modular model routing."""
 
-from typing import List
+from typing import List, Optional
+import logging
 
-from config import OPENAI_API_KEY, EMBEDDING_MODEL
-
-# LangChain recently moved the OpenAI wrappers into a separate package.  We try
-# to import from ``langchain_openai`` first and fall back to the legacy location
-# for older versions.  This keeps the code compatible with a wider range of
-# LangChain releases.
-try:  # pragma: no cover - exercised in tests via patching
-    from langchain_openai import OpenAIEmbeddings
-except Exception:  # pragma: no cover
-    from langchain.embeddings.openai import OpenAIEmbeddings  # type: ignore
+logger = logging.getLogger(__name__)
 
 
 class Embedder:
-    """Generate embeddings using LangChain's ``OpenAIEmbeddings`` wrapper."""
+    """Generate embeddings using Universal Model Router."""
 
-    def __init__(self) -> None:
-        self.client = OpenAIEmbeddings(
-            model=EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY
-        )
+    def __init__(self, router=None) -> None:
+        self.router = router
+        if not router:
+            # Import here to avoid circular imports
+            from ..llm.core.router import LLMRouter
+            try:
+                self.router = LLMRouter()
+            except Exception as e:
+                logger.error(f"Failed to initialize Universal Router: {e}")
+                self.router = None
 
     def embed(self, texts: List[str]) -> List[List[float]]:
-        """Embed a list of texts and return the raw vectors."""
-        return self.client.embed_documents(texts)
+        """Embed a list of texts using configured embedding model."""
+        if not self.router:
+            raise Exception("Universal Router not available - cannot generate embeddings")
+        
+        try:
+            return self.router.embed(texts)
+        except Exception as e:
+            logger.error(f"Embedding generation failed: {e}")
+            # Fallback to hardcoded OpenAI for now during transition
+            return self._fallback_embed(texts)
+    
+    def _fallback_embed(self, texts: List[str]) -> List[List[float]]:
+        """Fallback embedding using hardcoded OpenAI (temporary during transition)."""
+        logger.warning("Using fallback OpenAI embeddings - modular routing failed")
+        
+        try:
+            from config import OPENAI_API_KEY, EMBEDDING_MODEL
+            try:
+                from langchain_openai import OpenAIEmbeddings
+            except Exception:
+                from langchain.embeddings.openai import OpenAIEmbeddings
+            
+            client = OpenAIEmbeddings(
+                model=EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY
+            )
+            return client.embed_documents(texts)
+        except Exception as e:
+            logger.error(f"Fallback embedding also failed: {e}")
+            raise Exception(f"All embedding methods failed: {e}")

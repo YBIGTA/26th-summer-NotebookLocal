@@ -3,6 +3,8 @@ from ..models.requests import ChatRequest
 from ..models.responses import ChatResponse, Choice, Message, Usage
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage
+from typing import List
+from PIL import Image
 import os
 import uuid
 import time
@@ -69,6 +71,26 @@ class AnthropicAdapter(BaseAdapter):
             }]
         }
         return f"data: {json.dumps(chunk_data)}\n\n"
+    
+    def embed(self, texts: List[str], model: str) -> List[List[float]]:
+        """Generate embeddings - not supported by Anthropic adapter"""
+        raise NotImplementedError("Anthropic adapter does not support embeddings. Use OpenAI or other embedding providers.")
+    
+    async def describe_images(self, images: List[Image.Image], model: str, prompt: str = "Describe this image") -> List[str]:
+        """Generate descriptions for images using Anthropic Vision API"""
+        descriptions = []
+        
+        for img in images:
+            try:
+                # Anthropic vision would be implemented here
+                # For now, raise NotImplementedError
+                raise NotImplementedError("Anthropic vision API not yet implemented in this adapter")
+                
+            except Exception as e:
+                logger.error(f"Anthropic vision processing failed: {e}")
+                descriptions.append(f"[Image processing failed: {str(e)}]")
+        
+        return descriptions
     
     async def _health_check_implementation(self) -> bool:
         """Check Anthropic API availability via LangChain"""
