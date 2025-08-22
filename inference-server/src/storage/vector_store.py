@@ -39,10 +39,21 @@ class WeaviateVectorStore:
             "vectorizer": "none",
             "properties": [
                 {"name": self.text_key, "dataType": ["text"]},
+                {"name": "chunk_id", "dataType": ["text"]},
+                {"name": "doc_uid", "dataType": ["text"]},
+                {"name": "order_index", "dataType": ["int"]},
+                {"name": "type", "dataType": ["text"]},
             ],
         }
         if not self.client.schema.exists(self.index_name):
             self.client.schema.create_class(schema)
+        
+        # Update index_name to match Weaviate's actual class name (which may be capitalized)
+        actual_classes = [cls['class'] for cls in self.client.schema.get().get('classes', [])]
+        for class_name in actual_classes:
+            if class_name.lower() == self.index_name.lower():
+                self.index_name = class_name  # Use the actual capitalized name
+                break
 
     # ------------------------------------------------------------------
     def add_texts(
@@ -70,6 +81,7 @@ class WeaviateVectorStore:
         query: str,
         k: int = 4,
         alpha: float = 0.5,
+        filter: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """Return the top ``k`` most similar documents for ``query``.
 
@@ -78,20 +90,29 @@ class WeaviateVectorStore:
         between the two methods (0 = only keyword, 1 = only vector).
         """
         vector = self.embedding(query) if self.embedding else None
-        result = (
+        query_builder = (
             self.client.query
-            .get(self.index_name, [self.text_key])
+            .get(self.index_name, [self.text_key, "chunk_id", "doc_uid", "order_index", "type"])
             .with_hybrid(query, vector=vector, alpha=alpha)
-            .with_limit(k)
-            .do()
+            .with_additional(["score"])
         )
+        
+        # Add filter if provided
+        if filter:
+            query_builder = query_builder.with_where(filter)
+            
+        result = query_builder.with_limit(k).do()
         hits = result.get("data", {}).get("Get", {}).get(self.index_name, [])
         # Format results as a list of documents with text and metadata
         documents: List[Dict[str, Any]] = []
         for hit in hits:
-            doc = {"text": hit.get(self.text_key, "")}
+            doc = {
+                "text": hit.get(self.text_key, ""),
+                "score": hit.get("_additional", {}).get("score", 0.0)  # Get hybrid score
+            }
+            # Include all metadata fields
             for key, value in hit.items():
-                if key != self.text_key:
+                if key not in [self.text_key, "_additional"]:
                     doc[key] = value
             documents.append(doc)
         return documents

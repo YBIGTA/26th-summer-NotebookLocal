@@ -1,6 +1,7 @@
 """SQLAlchemy models for document and chunk metadata."""
 
-from sqlalchemy import Column, String, Integer, Text, DateTime, JSON, ForeignKey, UUID
+from sqlalchemy import Column, String, Integer, Text, DateTime, ForeignKey, UUID
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import uuid
@@ -19,7 +20,7 @@ class Document(Base):
     source_type = Column(String(50), nullable=False, index=True)  # 'pdf', 'web', 'slide'
     path = Column(Text, nullable=False)
     lang = Column(String(10), default='auto', index=True)
-    tags = Column(JSON, nullable=True)  # List of tags: ['course1', 'week2', 'topic3']
+    tags = Column(JSONB, nullable=True)  # List of tags: ['course1', 'week2', 'topic3']
     page_count = Column(Integer, nullable=True)
     checksum = Column(String(64), unique=True, nullable=True, index=True)
     ingested_at = Column(DateTime(timezone=True), server_default=func.now())

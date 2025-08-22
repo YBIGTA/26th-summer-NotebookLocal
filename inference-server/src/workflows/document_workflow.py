@@ -25,12 +25,17 @@ class DocumentWorkflow:
         self,
         store: Union[SimpleVectorStore, WeaviateVectorStore, HybridStore],
         embedder: Embedder | None = None,
+        router = None,
     ) -> None:
+        if embedder is None:
+            raise ValueError("Embedder is required for DocumentWorkflow")
+        if router is None:
+            raise ValueError("Router is required for DocumentWorkflow (needed for ImageProcessor)")
 
         self.pdf_processor = PDFProcessor()
-        self.image_processor = ImageProcessor()
+        self.image_processor = ImageProcessor(router=router)
         self.text_processor = TextProcessor()
-        self.embedder = embedder or Embedder()
+        self.embedder = embedder
         self.store = store
 
         workflow = StateGraph(dict)

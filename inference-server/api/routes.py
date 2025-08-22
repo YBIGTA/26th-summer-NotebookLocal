@@ -230,15 +230,12 @@ def convert_obsidian_to_openai(obsidian_request: ObsidianChatRequest) -> ChatReq
 def add_rag_context(openai_request: ChatRequest, user_message: str) -> ChatRequest:
     """Add RAG context from vector search to OpenAI request."""
     try:
-        # Use existing processor to get vector search results
-        # We'll call the internal _retrieve method from qa_workflow
-        from src.workflows.qa_workflow import QAWorkflow
-        from src.storage.vector_store import get_vector_store
-        from src.processors.embedder import Embedder
+        # Use the existing global processor that has properly initialized router
+        if not processor:
+            raise ValueError("Global processor not initialized")
         
-        embedder = Embedder()
-        store = get_vector_store(embedder.embed)
-        qa_workflow = QAWorkflow(store, embedder)
+        # Use the processor's existing qa_workflow
+        qa_workflow = processor.qa_workflow
         
         # Get context using the existing workflow
         state = {"question": user_message}

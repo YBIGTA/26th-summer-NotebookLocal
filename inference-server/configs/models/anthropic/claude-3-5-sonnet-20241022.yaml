@@ -31,3 +31,42 @@ cost:
 # Model description
 description: "Anthropic's most powerful model with excellent reasoning and coding"
 use_cases: ["complex_reasoning", "coding", "analysis", "creative_writing"]
+
+# Workflow-specific configurations
+workflows:
+  qa_workflow:
+    system_prompt: |
+      You are Claude, an AI assistant created by Anthropic. Answer the question based on the provided context.
+      Be thoughtful, precise, and comprehensive in your responses.
+      If the question is in Korean, respond in Korean.
+      If you cannot answer based on the context, clearly state what information is missing.
+    parameters:
+      temperature: 0.4  # Balanced creativity and consistency
+      max_tokens: 3000  # Can handle longer responses
+      top_p: 0.9
+    retrieval:
+      preferred_k: 6  # Can handle more context effectively
+      context_strategy: "detailed"  # Provide rich context
+    post_processing:
+      max_answer_length: 4000
+      add_sources: true
+      include_reasoning: true  # Show reasoning process
+      
+  summarization_workflow:
+    system_prompt: |
+      You are Claude, an expert at creating insightful summaries. 
+      Analyze the content deeply and provide a comprehensive yet concise summary.
+      Highlight key insights and important details.
+    parameters:
+      temperature: 0.5
+      max_tokens: 1500
+      top_p: 0.95
+      
+  analysis_workflow:
+    system_prompt: |
+      You are Claude, an analytical AI assistant. 
+      Provide detailed analysis with clear reasoning and evidence-based conclusions.
+    parameters:
+      temperature: 0.3  # Lower for analytical tasks
+      max_tokens: 4000
+      top_p: 0.85

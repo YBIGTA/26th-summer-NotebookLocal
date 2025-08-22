@@ -25,12 +25,10 @@ class QAWorkflow:
         self.store = store
         self.embedder = embedder or Embedder()
         
-        # Initialize LLM router or fallback to None
-        try:
-            self.llm_router = llm_router or LLMRouter()
-        except Exception as e:
-            print(f"Warning: Failed to initialize LLM router: {e}")
-            self.llm_router = None
+        # Initialize LLM router - NO FALLBACKS
+        if llm_router is None:
+            raise ValueError("LLM router is required - no fallback available")
+        self.llm_router = llm_router
 
         workflow = StateGraph(dict)
         workflow.add_node("retrieve", self._retrieve)
@@ -106,31 +104,54 @@ class QAWorkflow:
         try:
             logger.info("🤖 Starting LLM generation...")
             
-            # Create OpenAI-compatible request (router will decide model)
+            # Get the default chat model from router config
+            if not hasattr(self.llm_router, 'routing_config') or 'rules' not in self.llm_router.routing_config:
+                raise ValueError("LLM router not properly configured")
+                
+            selected_model = self.llm_router.routing_config['rules']['chat_default']
+            if not selected_model:
+                raise ValueError("No default chat model configured in router")
+            
+            logger.info(f"📥 Selected model: {selected_model}")
+            
+            # Load model-specific configuration  
+            model_config = self._load_model_config(selected_model)
+            workflow_config = model_config.get('workflows', {}).get('qa_workflow', {})
+            
+            # Get model-specific system prompt - NO FALLBACK
+            system_prompt = workflow_config.get('system_prompt')
+            if not system_prompt:
+                raise ValueError(f"No system_prompt configured for model {selected_model} in qa_workflow")
+            
+            # Get model-specific parameters - NO FALLBACKS
+            model_params = workflow_config.get('parameters')
+            if not model_params:
+                raise ValueError(f"No parameters configured for model {selected_model} in qa_workflow")
+            
+            logger.info(f"🔧 Using model config: temp={model_params.get('temperature')}, max_tokens={model_params.get('max_tokens')}")
+            
+            # Build messages with model-specific prompt
             messages = [
-                Message(
-                    role="system", 
-                    content="Answer the question based on the provided context. If the question is in Korean, respond in Korean."
-                ),
+                Message(role="system", content=system_prompt),
                 Message(
                     role="user", 
                     content=f"Context:\n{state['context']}\n\nQuestion: {state['question']}"
                 )
             ]
             
-            request = ChatRequest(
+            # Create new request with model-specific configuration
+            configured_request = ChatRequest(
                 messages=messages,
-                temperature=0.7,
-                max_tokens=2048
-                # NO model specified - let router decide dynamically
+                model=selected_model,
+                **model_params
             )
             
-            logger.info(f"📤 Sending request to router: {len(messages)} messages, temp={request.temperature}")
+            logger.info(f"📤 Sending configured request: {len(messages)} messages, model={selected_model}")
             
-            # Router decides model and routes to appropriate adapter
-            response = await self.llm_router.route(request)
+            # Route the properly configured request
+            response = await self.llm_router.route(configured_request)
             
-            logger.info(f"📥 Router response: model={getattr(response, 'model', 'unknown')}")
+            logger.info(f"📥 Router response received from {selected_model}")
             
             if response.choices and len(response.choices) > 0:
                 answer = response.choices[0].message.content
@@ -146,6 +167,28 @@ class QAWorkflow:
             state["answer"] = f"Error: {str(e)}"
             
         return state
+
+    def _load_model_config(self, model_name: str) -> dict:
+        """Load model configuration to get workflow-specific settings"""
+        from ..llm.utils.config_loader import ConfigLoader
+        config_loader = ConfigLoader()
+        
+        # Determine provider from model name
+        if 'gpt' in model_name.lower() or 'text-embedding' in model_name.lower():
+            provider = 'openai'
+        elif 'claude' in model_name.lower():
+            provider = 'anthropic'
+        elif 'qwen' in model_name.lower():
+            provider = 'qwen'
+        else:
+            raise ValueError(f"Unknown provider for model {model_name} - cannot determine config path")
+        
+        try:
+            config_path = f'configs/models/{provider}/{model_name}.yaml'
+            return config_loader.load_config(config_path)
+        except Exception as e:
+            logger.error(f"Failed to load config for {model_name}: {e}")
+            raise
 
     # ------------------------------------------------------------------
     async def ask(self, question: str, filters: Dict[str, Any] = None) -> str:

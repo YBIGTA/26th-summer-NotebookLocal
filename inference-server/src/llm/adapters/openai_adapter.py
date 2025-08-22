@@ -78,6 +78,39 @@ class OpenAIAdapter(BaseAdapter):
         except Exception as e:
             logger.error(f"Failed to load config for {model_name}: {e}")
             raise
+    
+    def _get_request_parameters(self, request: ChatRequest, model_config: dict, workflow: str = "qa_workflow") -> dict:
+        """Get parameters for request from model config - NO FALLBACKS"""
+        # Start with base model parameters - NO DEFAULTS
+        params = {}
+        
+        # Required parameters must be in config
+        if 'temperature' not in model_config:
+            raise ValueError(f"temperature not configured for model")
+        if 'max_tokens' not in model_config:
+            raise ValueError(f"max_tokens not configured for model")
+        
+        params['temperature'] = model_config['temperature']
+        params['max_tokens'] = model_config['max_tokens']
+        
+        # Optional parameters only if explicitly configured
+        if 'top_p' in model_config:
+            params['top_p'] = model_config['top_p']
+        
+        # Override with workflow-specific parameters if available
+        workflow_config = model_config.get('workflows', {}).get(workflow, {})
+        workflow_params = workflow_config.get('parameters', {})
+        params.update(workflow_params)
+        
+        # Finally, override with any request-specific parameters
+        if hasattr(request, 'temperature') and request.temperature is not None:
+            params['temperature'] = request.temperature
+        if hasattr(request, 'max_tokens') and request.max_tokens is not None:
+            params['max_tokens'] = request.max_tokens
+        if hasattr(request, 'top_p') and request.top_p is not None:
+            params['top_p'] = request.top_p
+            
+        return params
 
     def embed(self, texts: List[str], model: str) -> List[List[float]]:
         """Generate embeddings using OpenAI embedding model"""
@@ -101,16 +134,12 @@ class OpenAIAdapter(BaseAdapter):
     
     async def describe_images(self, images: List[Image.Image], model: str, prompt: str = "Describe this image") -> List[str]:
         """Generate descriptions for images using OpenAI Vision API"""
-        try:
-            # Load model-specific config
-            model_config = self._load_model_config(model)
-            
-            # Verify this model supports vision
-            if not model_config.get('capabilities', {}).get('vision', False):
-                raise ValueError(f"Model {model} does not support vision")
-        except Exception as e:
-            logger.error(f"Model config error for {model}: {e}")
-            # Continue with default settings for now
+        # Load model-specific config - NO FALLBACKS
+        model_config = self._load_model_config(model)
+        
+        # Verify this model supports vision
+        if not model_config.get('capabilities', {}).get('vision', False):
+            raise ValueError(f"Model {model} does not support vision")
             
         descriptions = []
         
@@ -122,6 +151,16 @@ class OpenAIAdapter(BaseAdapter):
                 img_bytes = buffered.getvalue()
                 img_base64 = base64.b64encode(img_bytes).decode('utf-8')
                 
+                # Get vision-specific parameters from model config - NO FALLBACKS
+                vision_params = {}
+                if 'max_tokens' not in model_config:
+                    raise ValueError(f"max_tokens not configured for vision model {model}")
+                if 'temperature' not in model_config:
+                    raise ValueError(f"temperature not configured for vision model {model}")
+                
+                vision_params['max_tokens'] = model_config['max_tokens']
+                vision_params['temperature'] = model_config['temperature']
+                
                 # Call OpenAI Vision API
                 response = self.openai_client.chat.completions.create(
                     model=model,
@@ -132,7 +171,7 @@ class OpenAIAdapter(BaseAdapter):
                             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_base64}"}}
                         ]
                     }],
-                    max_tokens=500
+                    **vision_params
                 )
                 
                 description = response.choices[0].message.content
@@ -167,13 +206,14 @@ class OpenAIAdapter(BaseAdapter):
                     "content": msg.content
                 })
             
+            # Get parameters from model config with request overrides
+            params = self._get_request_parameters(request, model_config)
+            
             # Create completion
             response = self.openai_client.chat.completions.create(
                 model=model_name,
                 messages=messages,
-                temperature=getattr(request, 'temperature', 0.7),
-                max_tokens=getattr(request, 'max_tokens', 2048),
-                top_p=getattr(request, 'top_p', 1.0)
+                **params
             )
             
             # Convert to our ChatResponse format
@@ -227,14 +267,15 @@ class OpenAIAdapter(BaseAdapter):
                     "content": msg.content
                 })
             
+            # Get parameters from model config with request overrides
+            params = self._get_request_parameters(request, model_config)
+            
             # Create streaming completion
             stream = self.openai_client.chat.completions.create(
                 model=model_name,
                 messages=messages,
-                temperature=getattr(request, 'temperature', 0.7),
-                max_tokens=getattr(request, 'max_tokens', 2048),
-                top_p=getattr(request, 'top_p', 1.0),
-                stream=True
+                stream=True,
+                **params
             )
             
             # Yield chunks in OpenAI format

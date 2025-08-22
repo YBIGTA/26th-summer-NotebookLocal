@@ -44,10 +44,18 @@ class QwenAdapter(BaseAdapter):
 
     async def _start_vllm_server(self, model_config: dict) -> bool:
         """Start vLLM server for specific model"""
-        model_name = model_config.get('name', 'unknown')
-        port = model_config.get('port')
-        model_path = model_config.get('model_path')
-        auto_start = model_config.get('auto_start', False)
+        # Required fields - NO FALLBACKS
+        if 'name' not in model_config:
+            raise ValueError("Model name not configured")
+        if 'server' not in model_config or 'port' not in model_config['server']:
+            raise ValueError("Server port not configured for model")
+        if 'model_path' not in model_config:
+            raise ValueError("Model path not configured")
+            
+        model_name = model_config['name']
+        port = model_config['server']['port']
+        model_path = model_config['model_path']
+        auto_start = model_config.get('auto_start', False)  # This can have fallback as it's optional
         
         logger.info(f"🚀 Starting vLLM server for {model_name}")
         
@@ -61,30 +69,34 @@ class QwenAdapter(BaseAdapter):
             return False
             
         try:
-            # Build command from model config
+            # Build command from model config - NO FALLBACKS
+            vllm_config = model_config.get('vllm_config', {})
+            if not vllm_config:
+                raise ValueError(f"vLLM configuration not found for model {model_name}")
+                
             cmd = [
                 "python", "-m", "vllm.entrypoints.openai.api_server",
                 "--model", model_path,
                 "--port", str(port),
-                "--host", model_config.get('host', '127.0.0.1'),
-                "--served-model-name", model_config.get('served_model_name', model_name),
-                "--max-model-len", str(model_config.get('max_model_len', 8192)),
-                "--quantization", model_config.get('quantization', 'bitsandbytes'),
-                "--load-format", model_config.get('load_format', 'auto'),
-                "--gpu-memory-utilization", str(model_config.get('gpu_memory_utilization', 0.8)),
-                "--dtype", model_config.get('dtype', 'auto'),
-                "--max-num-seqs", str(model_config.get('max_num_seqs', 16)),
-                "--tensor-parallel-size", str(model_config.get('tensor_parallel_size', 1))
+                "--host", model_config.get('server', {}).get('host', '127.0.0.1'),  # Optional with fallback
+                "--served-model-name", model_config['served_model_name'],
+                "--max-model-len", str(vllm_config['max_model_len']),
+                "--quantization", vllm_config['quantization'],
+                "--load-format", vllm_config['load_format'],
+                "--gpu-memory-utilization", str(vllm_config['gpu_memory_utilization']),
+                "--dtype", vllm_config['dtype'],
+                "--max-num-seqs", str(vllm_config['max_num_seqs']),
+                "--tensor-parallel-size", str(vllm_config['tensor_parallel_size'])
             ]
             
-            # Add boolean flags
-            if model_config.get('trust_remote_code', True):
+            # Add boolean flags from config
+            if vllm_config.get('trust_remote_code'):
                 cmd.append("--trust-remote-code")
-            if model_config.get('disable_log_requests', True):
+            if vllm_config.get('disable_log_requests'):
                 cmd.append("--disable-log-requests")
-            if model_config.get('disable_custom_all_reduce', True):
+            if vllm_config.get('disable_custom_all_reduce'):
                 cmd.append("--disable-custom-all-reduce")
-            if model_config.get('enforce_eager', True):
+            if vllm_config.get('enforce_eager'):
                 cmd.append("--enforce-eager")
             
             # Set environment variables
@@ -125,7 +137,9 @@ class QwenAdapter(BaseAdapter):
 
     async def _ensure_server_running(self, model_config: dict) -> bool:
         """Ensure vLLM server is running for specific model"""
-        port = model_config.get('port')
+        if 'server' not in model_config or 'port' not in model_config['server']:
+            raise ValueError("Server port not configured for model")
+        port = model_config['server']['port']
         
         if await self._check_server_running(port):
             return True
@@ -153,15 +167,27 @@ class QwenAdapter(BaseAdapter):
             raise Exception(f"vLLM server is not available for {model_name}")
             
         messages = self._format_messages_for_vllm(request.messages)
-        port = model_config.get('port')
-        served_name = model_config.get('served_model_name', model_name)
+        
+        if 'server' not in model_config or 'port' not in model_config['server']:
+            raise ValueError(f"Server port not configured for model {model_name}")
+        if 'served_model_name' not in model_config:
+            raise ValueError(f"Served model name not configured for {model_name}")
+        if 'temperature' not in model_config:
+            raise ValueError(f"Temperature not configured for {model_name}")
+        if 'max_tokens' not in model_config:
+            raise ValueError(f"Max tokens not configured for {model_name}")
+        if 'top_p' not in model_config:
+            raise ValueError(f"Top p not configured for {model_name}")
+            
+        port = model_config['server']['port']
+        served_name = model_config['served_model_name']
         
         payload = {
             "model": served_name,
             "messages": messages,
-            "temperature": getattr(request, 'temperature', model_config.get('temperature', 0.7)),
-            "max_tokens": getattr(request, 'max_tokens', model_config.get('max_tokens', 2048)),
-            "top_p": getattr(request, 'top_p', model_config.get('top_p', 1.0))
+            "temperature": getattr(request, 'temperature', None) or model_config['temperature'],
+            "max_tokens": getattr(request, 'max_tokens', None) or model_config['max_tokens'],
+            "top_p": getattr(request, 'top_p', None) or model_config['top_p']
         }
         
         try:
@@ -280,6 +306,12 @@ class QwenAdapter(BaseAdapter):
                 img_bytes = buffered.getvalue()
                 img_base64 = base64.b64encode(img_bytes).decode('utf-8')
                 
+                # Get vision parameters from model config - NO FALLBACKS
+                if 'max_tokens' not in model_config:
+                    raise ValueError(f"max_tokens not configured for vision model {model}")
+                if 'temperature' not in model_config:
+                    raise ValueError(f"temperature not configured for vision model {model}")
+                
                 # Create OpenAI-compatible vision request
                 payload = {
                     "model": served_name,
@@ -290,8 +322,8 @@ class QwenAdapter(BaseAdapter):
                             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_base64}"}}
                         ]
                     }],
-                    "max_tokens": 500,
-                    "temperature": 0.7
+                    "max_tokens": model_config['max_tokens'],
+                    "temperature": model_config['temperature']
                 }
                 
                 async with aiohttp.ClientSession() as session:

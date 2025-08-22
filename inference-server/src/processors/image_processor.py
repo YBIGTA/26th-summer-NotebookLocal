@@ -12,15 +12,9 @@ class ImageProcessor:
     """Generate descriptions for images using Universal Model Router."""
 
     def __init__(self, router=None) -> None:
+        if router is None:
+            raise ValueError("Universal Router is required - no fallback available")
         self.router = router
-        if not router:
-            # Import here to avoid circular imports
-            from ..llm.core.router import LLMRouter
-            try:
-                self.router = LLMRouter()
-            except Exception as e:
-                logger.error(f"Failed to initialize Universal Router: {e}")
-                self.router = None
         
 
     def describe(self, images: List[Image.Image]) -> List[str]:

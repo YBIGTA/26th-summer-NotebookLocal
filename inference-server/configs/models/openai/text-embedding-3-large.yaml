@@ -27,3 +27,29 @@ cost:
 # Model description
 description: "OpenAI's most powerful embedding model for semantic search"
 use_cases: ["semantic_search", "document_retrieval", "similarity_analysis"]
+
+# Workflow-specific configurations
+workflows:
+  qa_workflow:
+    # Not applicable for embedding-only model
+    enabled: false
+    
+  embedding_workflow:
+    parameters:
+      batch_size: 100  # Process embeddings in batches
+      normalize: true  # Normalize embeddings
+      retry_on_failure: true
+    processing:
+      chunk_strategy: "sentence"  # How to split text for embedding
+      max_chunk_length: 8000  # Stay under token limit
+      overlap: 100  # Overlap between chunks
+    quality:
+      similarity_threshold: 0.7  # Minimum similarity for matches
+      top_k_default: 5  # Default number of results
+      
+  document_processing:
+    enabled: true
+    settings:
+      embed_title_separately: true
+      embed_metadata: false
+      store_raw_text: true

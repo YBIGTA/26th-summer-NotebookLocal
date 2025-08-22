@@ -38,6 +38,33 @@ class AnthropicAdapter(BaseAdapter):
             logger.error(f"Failed to load config for {model_name}: {e}")
             raise
     
+    def _get_request_parameters(self, request: ChatRequest, model_config: dict, workflow: str = "qa_workflow") -> dict:
+        """Get parameters for request from model config - NO FALLBACKS"""
+        # Start with base model parameters - NO DEFAULTS
+        params = {}
+        
+        # Required parameters must be in config
+        if 'temperature' not in model_config:
+            raise ValueError(f"temperature not configured for model")
+        if 'max_tokens' not in model_config:
+            raise ValueError(f"max_tokens not configured for model")
+        
+        params['temperature'] = model_config['temperature']
+        params['max_tokens'] = model_config['max_tokens']
+        
+        # Override with workflow-specific parameters if available
+        workflow_config = model_config.get('workflows', {}).get(workflow, {})
+        workflow_params = workflow_config.get('parameters', {})
+        params.update(workflow_params)
+        
+        # Finally, override with any request-specific parameters
+        if hasattr(request, 'temperature') and request.temperature is not None:
+            params['temperature'] = request.temperature
+        if hasattr(request, 'max_tokens') and request.max_tokens is not None:
+            params['max_tokens'] = request.max_tokens
+            
+        return params
+    
     def _convert_to_openai_response(self, langchain_response: AIMessage, request: ChatRequest) -> ChatResponse:
         """Convert LangChain response to OpenAI format"""
         return ChatResponse(
@@ -113,12 +140,14 @@ class AnthropicAdapter(BaseAdapter):
             if not model_config.get('capabilities', {}).get('chat', False):
                 raise ValueError(f"Model {model_name} does not support chat")
             
+            # Get parameters from model config with request overrides
+            params = self._get_request_parameters(request, model_config)
+            
             # Create LangChain client dynamically for this request
             llm = ChatAnthropic(
                 anthropic_api_key=self.api_key,
                 model=model_name,
-                temperature=getattr(request, 'temperature', 0.7),
-                max_tokens=getattr(request, 'max_tokens', 4096)
+                **params
             )
             
             # Convert messages to LangChain format
@@ -178,12 +207,14 @@ class AnthropicAdapter(BaseAdapter):
             if not model_config.get('capabilities', {}).get('streaming', False):
                 raise ValueError(f"Model {model_name} does not support streaming")
             
+            # Get parameters from model config with request overrides
+            params = self._get_request_parameters(request, model_config)
+            
             # Create LangChain client dynamically for this request
             llm = ChatAnthropic(
                 anthropic_api_key=self.api_key,
                 model=model_name,
-                temperature=getattr(request, 'temperature', 0.7),
-                max_tokens=getattr(request, 'max_tokens', 4096)
+                **params
             )
             
             # Convert messages to LangChain format

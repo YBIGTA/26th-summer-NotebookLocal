@@ -389,7 +389,8 @@ class HybridStore:
                 vector_results = self.vector_store.similarity_search(
                     query=query,
                     k=k,
-                    alpha=alpha
+                    alpha=alpha,
+                    filter=weaviate_filter
                 )
             else:  # SimpleVectorStore
                 query_embedding = self.embedder.embed([query])[0]
