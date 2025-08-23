@@ -4,6 +4,7 @@ import { ApiClient } from "./api/ApiClient-clean";
 import { getSettings, setSettings } from "./settings/model-clean";
 import { CHAT_VIEWTYPE } from "./constants-minimal";
 import NotebookLocalView from "./components/NotebookLocalView";
+import { NotebookLocalSettingTab } from "./settings/SettingsTab";
 
 export default class NotebookLocalPlugin extends Plugin {
   // Core components
@@ -22,8 +23,8 @@ export default class NotebookLocalPlugin extends Plugin {
     // Register chat view
     this.registerView(CHAT_VIEWTYPE, (leaf) => new NotebookLocalView(leaf, this));
 
-    // TODO: Add settings tab when settings UI is ready
-    // this.addSettingTab(new CopilotSettingTab(this.app, this));
+    // Add settings tab
+    this.addSettingTab(new NotebookLocalSettingTab(this.app, this));
 
     // Register commands
     this.addCommands();

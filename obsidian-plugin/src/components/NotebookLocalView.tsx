@@ -4,6 +4,7 @@ import { ItemView, WorkspaceLeaf } from "obsidian";
 import { Root, createRoot } from "react-dom/client";
 import { ApiClient, ChatRequest } from "../api/ApiClient-clean";
 import { CHAT_VIEWTYPE } from "../constants-minimal";
+import { getSettings } from "../settings/model-clean";
 
 interface Message {
   id: string;
@@ -22,17 +23,20 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Check connection on mount
   useEffect(() => {
     checkConnection();
   }, []);
 
-  // Auto scroll to bottom
+  // Auto scroll to bottom when messages change or during streaming
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, isStreaming]);
 
   const checkConnection = async () => {
     try {
@@ -45,8 +49,9 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
   };
 
   const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || isStreaming) return;
 
+    const settings = getSettings();
     const userMessage: Message = {
       id: Date.now().toString(),
       content: input.trim(),
@@ -56,39 +61,111 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
 
     setMessages(prev => [...prev, userMessage]);
     setInput("");
-    setIsLoading(true);
 
-    try {
-      const request: ChatRequest = {
-        message: userMessage.content,
-        chat_id: `notebook_chat_${Date.now()}`,
-        stream: false,
-      };
+    const request: ChatRequest = {
+      message: userMessage.content,
+      chat_id: `notebook_chat_${Date.now()}`,
+      stream: settings.enableStreaming,
+    };
 
-      const response = await apiClient.chat(request);
+    if (settings.enableStreaming) {
+      // Streaming mode
+      setIsStreaming(true);
+      const assistantMessageId = (Date.now() + 1).toString();
+      setStreamingMessageId(assistantMessageId);
 
+      // Create initial empty assistant message
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: response.message,
+        id: assistantMessageId,
+        content: "",
         sender: 'assistant',
         timestamp: new Date(),
-        sources: response.sources,
+        sources: [],
       };
-
       setMessages(prev => [...prev, assistantMessage]);
-    } catch (error) {
-      console.error("Chat error:", error);
-      
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: `Connection Error: ${error.message}. Please check if the inference server is running.`,
-        sender: 'assistant',
-        timestamp: new Date(),
-      };
 
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
+      try {
+        // Create abort controller for this stream
+        abortControllerRef.current = new AbortController();
+
+        let fullContent = "";
+        let sources: string[] = [];
+
+        for await (const chunk of apiClient.chatStream(request)) {
+          // Check if streaming was cancelled
+          if (abortControllerRef.current?.signal.aborted) {
+            break;
+          }
+
+          fullContent += chunk;
+          
+          // Update the streaming message content
+          setMessages(prev => prev.map(msg => 
+            msg.id === assistantMessageId 
+              ? { ...msg, content: fullContent }
+              : msg
+          ));
+        }
+
+        // Final update with sources if available
+        setMessages(prev => prev.map(msg => 
+          msg.id === assistantMessageId 
+            ? { ...msg, sources: sources }
+            : msg
+        ));
+
+      } catch (error) {
+        console.error("Streaming chat error:", error);
+        
+        const errorContent = `Connection Error: ${error.message}. Please check if the inference server is running.`;
+        setMessages(prev => prev.map(msg => 
+          msg.id === assistantMessageId 
+            ? { ...msg, content: errorContent }
+            : msg
+        ));
+      } finally {
+        setIsStreaming(false);
+        setStreamingMessageId(null);
+        abortControllerRef.current = null;
+      }
+    } else {
+      // Non-streaming mode (fallback)
+      setIsLoading(true);
+      
+      try {
+        const response = await apiClient.chat(request);
+
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          content: response.message,
+          sender: 'assistant',
+          timestamp: new Date(),
+          sources: response.sources,
+        };
+
+        setMessages(prev => [...prev, assistantMessage]);
+      } catch (error) {
+        console.error("Chat error:", error);
+        
+        const errorMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          content: `Connection Error: ${error.message}. Please check if the inference server is running.`,
+          sender: 'assistant',
+          timestamp: new Date(),
+        };
+
+        setMessages(prev => [...prev, errorMessage]);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  const stopStreaming = () => {
+    if (abortControllerRef.current && isStreaming) {
+      abortControllerRef.current.abort();
+      setIsStreaming(false);
+      setStreamingMessageId(null);
     }
   };
 
@@ -252,7 +329,7 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
           </div>
         ))}
         
-        {isLoading && (
+        {(isLoading || isStreaming) && (
           <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
             <div
               style={{
@@ -267,8 +344,25 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
                 gap: '8px'
               }}
             >
-              <div>🤔</div>
-              <div>Thinking...</div>
+              <div>{isStreaming ? '⚡' : '🤔'}</div>
+              <div>{isStreaming ? 'Streaming...' : 'Thinking...'}</div>
+              {isStreaming && (
+                <button
+                  onClick={stopStreaming}
+                  style={{
+                    marginLeft: '12px',
+                    padding: '4px 8px',
+                    fontSize: '11px',
+                    border: '1px solid var(--background-modifier-border)',
+                    backgroundColor: 'var(--background-primary)',
+                    color: 'var(--text-normal)',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Stop
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -291,7 +385,7 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
           onChange={(e) => setInput(e.target.value)}
           onKeyPress={handleKeyPress}
           placeholder={isConnected ? "Ask about your Korean PDFs..." : "Connect to server first"}
-          disabled={!isConnected || isLoading}
+          disabled={!isConnected || isLoading || isStreaming}
           style={{
             flex: 1,
             minHeight: '44px',
@@ -308,7 +402,7 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
         />
         <button
           onClick={sendMessage}
-          disabled={!input.trim() || !isConnected || isLoading}
+          disabled={!input.trim() || !isConnected || isLoading || isStreaming}
           style={{
             padding: '12px 20px',
             border: 'none',
@@ -316,13 +410,13 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
             backgroundColor: 'var(--interactive-accent)',
             color: 'var(--text-on-accent)',
             cursor: isConnected && input.trim() ? 'pointer' : 'not-allowed',
-            opacity: (!input.trim() || !isConnected || isLoading) ? 0.5 : 1,
+            opacity: (!input.trim() || !isConnected || isLoading || isStreaming) ? 0.5 : 1,
             fontSize: '14px',
             fontWeight: '500',
             minWidth: '60px',
           }}
         >
-          {isLoading ? '...' : 'Send'}
+          {isLoading || isStreaming ? '...' : 'Send'}
         </button>
       </div>
     </div>

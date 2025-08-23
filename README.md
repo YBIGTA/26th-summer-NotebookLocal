@@ -257,7 +257,7 @@ rag-search-pipeline/
 ### 🤖 **Flexible AI Architecture**
 - **Multi-provider support**: Switch between OpenAI, Anthropic, local models
 - **Local model integration**: Qwen-VL for vision, vLLM for fast inference
-- **Cost optimization**: Route queries to most appropriate model
+- **Smart routing**: Route queries to most appropriate model for the task
 
 ### 📝 **Native Workflow Integration**
 - **Obsidian-first design**: Works within existing note-taking habits

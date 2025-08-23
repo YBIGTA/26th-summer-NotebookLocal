@@ -78,3 +78,6 @@ node_modules/
 # vLLM / models (pick one pattern)
 inference-server/models/*
 # !modular_model/models/.gitkeep
+
+# original obsidian plugin
+obsidian-original/
