@@ -46,7 +46,7 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
   // Initialize RAG context
   const initializeRagContext = async () => {
     try {
-      const context = await ragContextManager.current.getCurrentContext();
+      const context = ragContextManager.current.getContext();
       setRagContext(context);
     } catch (error) {
       console.error('Error initializing RAG context:', error);
@@ -273,6 +273,16 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
     } catch (error) {
       console.error('Error updating context:', error);
     }
+  };
+
+  const handleSendMessage = async (message: string, currentRagContext: RagContext) => {
+    if (!message.trim() || isLoading || isStreaming) return;
+    
+    // Parse the message to get commands and clean text
+    const parsedMessage = commandParser.current.parseMessage(message);
+    
+    // Call the original handleMessageSubmit with the parsed message
+    await handleMessageSubmit(message, parsedMessage);
   };
 
   const handleFileSelect = (file: any) => {
@@ -526,12 +536,15 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
 
             {/* Enhanced Chat Input */}
             <div style={{ borderTop: '1px solid var(--background-modifier-border)' }}>
-              <EnhancedChatInput
-                onSubmit={handleMessageSubmit}
-                disabled={!isConnected || isLoading || isStreaming}
-                placeholder={isConnected ? "Ask about your documents or use /help for commands..." : "Connect to server first"}
-                ragContext={ragContext}
-              />
+              {ragContext && (
+                <EnhancedChatInput
+                  onSendMessage={handleSendMessage}
+                  onContextChange={handleContextChange}
+                  disabled={!isConnected || isLoading || isStreaming}
+                  placeholder={isConnected ? "Ask about your documents or use /help for commands..." : "Connect to server first"}
+                  ragContext={ragContext}
+                />
+              )}
             </div>
           </div>
         )}
