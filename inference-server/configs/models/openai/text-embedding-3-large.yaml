@@ -7,7 +7,6 @@ model_id: text-embedding-3-large
 capabilities:
   chat: false
   vision: false
-  function_calling: false
   streaming: false
   embeddings: true
 
@@ -18,11 +17,6 @@ max_input_tokens: 8191
 # API settings
 timeout: 30
 max_retries: 2
-
-# Cost information (per 1M tokens)
-cost:
-  input: 0.13  # USD per 1M tokens
-  output: 0.0  # No output cost for embeddings
 
 # Model description
 description: "OpenAI's most powerful embedding model for semantic search"

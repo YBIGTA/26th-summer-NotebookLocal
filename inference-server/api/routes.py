@@ -117,7 +117,7 @@ async def process_file(file: UploadFile = File(...)):
             temp_path = tmp.name
         
         # Process the document
-        result = processor.process_document(temp_path)
+        result = await processor.process_document(temp_path)
         
         # Clean up temporary file
         os.unlink(temp_path)

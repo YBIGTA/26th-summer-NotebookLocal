@@ -17,7 +17,7 @@ class ImageProcessor:
         self.router = router
         
 
-    def describe(self, images: List[Image.Image]) -> List[str]:
+    async def describe(self, images: List[Image.Image]) -> List[str]:
         if not images:
             logger.info("No images to process")
             return []
@@ -27,9 +27,15 @@ class ImageProcessor:
         if not self.router:
             raise Exception("Universal Router not available - cannot process images")
         
-        import asyncio
-        loop = asyncio.get_event_loop()
-        descriptions = loop.run_until_complete(self.router.vision(images))
+        # Use a focused prompt for document image processing
+        focused_prompt = """Briefly describe the key information in this image. Focus on:
+- Text content (headings, labels, captions)
+- Data (numbers, values, statistics)
+- Main visual elements (charts, diagrams, tables)
+- Purpose/context of the image
+Keep it concise and factual. Maximum 2-3 sentences."""
+        
+        descriptions = await self.router.vision(images, focused_prompt)
         logger.info(f"Universal Router vision processing completed: {len(descriptions)} descriptions")
         return descriptions
     

@@ -92,7 +92,7 @@ class DocumentWorkflow:
             return state
 
     # ------------------------------------------------------------------
-    def _prepare(self, state: Dict) -> Dict:
+    async def _prepare(self, state: Dict) -> Dict:
         """Step 2: Process each page individually (text + images) then chunk"""
         start_time = time.time()
         
@@ -124,7 +124,7 @@ class DocumentWorkflow:
                 page_descriptions = []
                 if page.images:
                     logger.info(f"   🖼️  Found {len(page.images)} image(s) on page {page.page_number}")
-                    page_descriptions = self.image_processor.describe(page.images)
+                    page_descriptions = await self.image_processor.describe(page.images)
                     logger.info(f"   📝 Generated {len(page_descriptions)} description(s)")
                     total_images_processed += len(page.images)
                 else:
@@ -280,7 +280,7 @@ class DocumentWorkflow:
             return state
 
     # ------------------------------------------------------------------
-    def run(self, pdf_path: str) -> Dict[str, int]:
+    async def run(self, pdf_path: str) -> Dict[str, int]:
         """Execute the workflow for ``pdf_path``."""
         
         logger.info(f"🚀 STARTING DOCUMENT PROCESSING WORKFLOW")
@@ -289,7 +289,7 @@ class DocumentWorkflow:
         workflow_start_time = time.time()
         
         try:
-            final_state = self.graph.invoke({"pdf_path": pdf_path})
+            final_state = await self.graph.ainvoke({"pdf_path": pdf_path})
             
             total_time = time.time() - workflow_start_time
             result = final_state.get("result", {})

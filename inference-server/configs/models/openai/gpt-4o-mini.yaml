@@ -7,7 +7,6 @@ model_id: gpt-4o-mini
 capabilities:
   chat: true
   vision: true
-  function_calling: true
   streaming: true
   embeddings: false
 
@@ -25,14 +24,9 @@ max_retries: 2
 # Context window
 context_window: 128000
 
-# Cost information (per 1M tokens)
-cost:
-  input: 0.15  # USD per 1M input tokens
-  output: 0.60  # USD per 1M output tokens
-
 # Model description
 description: "OpenAI's fast and cost-effective small model, supports vision"
-use_cases: ["quick_responses", "vision_tasks", "cost_effective"]
+use_cases: ["quick_responses", "vision_tasks", "fast_responses"]
 
 # Workflow-specific configurations
 workflows:

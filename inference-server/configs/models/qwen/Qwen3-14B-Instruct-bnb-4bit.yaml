@@ -7,7 +7,6 @@ model_id: Qwen3-14B-Instruct-bnb-4bit
 capabilities:
   chat: true
   vision: false
-  function_calling: true
   streaming: true
   embeddings: false
 
@@ -60,11 +59,6 @@ environment:
 
 # Context window
 context_window: 32768
-
-# Cost information (local model - no API costs)
-cost:
-  input: 0.0
-  output: 0.0
 
 # Model description
 description: "Local Qwen3-14B model optimized for Korean language"

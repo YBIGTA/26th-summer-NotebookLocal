@@ -7,7 +7,6 @@ model_id: claude-3-5-sonnet-20241022
 capabilities:
   chat: true
   vision: true
-  function_calling: true
   streaming: true
   embeddings: false
 
@@ -22,11 +21,6 @@ max_retries: 2
 
 # Context window
 context_window: 200000
-
-# Cost information (per 1M tokens)
-cost:
-  input: 3.00   # USD per 1M input tokens
-  output: 15.00 # USD per 1M output tokens
 
 # Model description
 description: "Anthropic's most powerful model with excellent reasoning and coding"

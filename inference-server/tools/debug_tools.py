@@ -157,7 +157,7 @@ def run_full_test():
     print()
     
     # Test 4: PDF upload (if test.pdf exists)
-    pdf_path = "test.pdf"
+    pdf_path = "test2.pdf"
     upload_ok = False
     # Check in project root
     project_root = Path(__file__).parent.parent

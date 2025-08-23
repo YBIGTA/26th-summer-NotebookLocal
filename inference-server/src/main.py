@@ -39,8 +39,8 @@ class LectureProcessor:
         self.document_workflow = DocumentWorkflow(self.store, self.embedder, router=self.router)
         self.qa_workflow = QAWorkflow(self.store, self.embedder, llm_router=self.router)
 
-    def process_document(self, pdf_path: str):
-        return self.document_workflow.run(pdf_path)
+    async def process_document(self, pdf_path: str):
+        return await self.document_workflow.run(pdf_path)
 
     async def ask_question(self, question: str) -> str:
         return await self.qa_workflow.ask(question)
