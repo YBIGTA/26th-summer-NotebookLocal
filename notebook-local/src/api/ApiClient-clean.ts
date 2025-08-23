@@ -148,11 +148,16 @@ export class ApiClient {
             
             try {
               const parsed = JSON.parse(data);
+              // console.log('Streaming data received:', parsed); // DEBUG
               if (parsed.content) {
                 yield parsed.content;
               }
+              if (parsed.error) {
+                // console.error('Streaming error:', parsed.error); // DEBUG
+                throw new Error(parsed.error);
+              }
             } catch (e) {
-              // Skip invalid JSON
+              // console.warn('Invalid streaming JSON:', data, e); // DEBUG
             }
           }
         }

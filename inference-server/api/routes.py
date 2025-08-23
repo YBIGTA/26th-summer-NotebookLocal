@@ -18,6 +18,35 @@ logger = logging.getLogger(__name__)
 from src.main import LectureProcessor
 from src.llm.core.router import LLMRouter
 from src.llm.models.requests import ChatRequest, Message
+
+
+def extract_chunk_content(raw_chunk: str) -> str:
+    """Extract clean text content from OpenAI streaming chunk format."""
+    try:
+        # Handle cases where raw_chunk is already clean text
+        if not raw_chunk.startswith('data: '):
+            return raw_chunk.strip()
+        
+        # Remove 'data: ' prefix
+        json_str = raw_chunk[6:].strip()
+        
+        # Skip [DONE] messages
+        if json_str == '[DONE]':
+            return ""
+            
+        # Parse the JSON chunk
+        chunk_data = json.loads(json_str)
+        
+        # Extract content from OpenAI format: choices[0].delta.content
+        if 'choices' in chunk_data and len(chunk_data['choices']) > 0:
+            delta = chunk_data['choices'][0].get('delta', {})
+            content = delta.get('content', '')
+            return content
+        
+        return ""
+    except (json.JSONDecodeError, KeyError, IndexError) as e:
+        logger.warning(f"Failed to parse streaming chunk: {raw_chunk[:100]}... Error: {e}")
+        return ""
 from src.llm.models.responses import ChatResponse, Choice, Usage
 
 router = APIRouter()
@@ -318,13 +347,17 @@ async def obsidian_chat_stream(request: ObsidianChatRequest):
             openai_request = add_rag_context(openai_request, request.message)
             
             # 3. Stream from LLM router
-            async for chunk in llm_router.route(openai_request):
-                data = {
-                    "content": chunk,
-                    "chat_id": chat_id,
-                    "done": False
-                }
-                yield f"data: {json.dumps(data)}\n\n"
+            stream_generator = await llm_router.route(openai_request)
+            async for raw_chunk in stream_generator:
+                # Extract clean text content from OpenAI chunk format
+                clean_content = extract_chunk_content(raw_chunk)
+                if clean_content:  # Only send non-empty content
+                    data = {
+                        "content": clean_content,
+                        "chat_id": chat_id,
+                        "done": False
+                    }
+                    yield f"data: {json.dumps(data)}\n\n"
             
             # Send completion signal
             final_data = {"content": "", "chat_id": chat_id, "done": True}

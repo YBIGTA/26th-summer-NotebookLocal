@@ -1,6 +1,6 @@
 // tailwind.config.js
 
-import { colorOpacityPlugin } from "./src/imageProcessing/lib/plugins/colorOpacityPlugin";
+import { colorOpacityPlugin } from "./src/lib/plugins/colorOpacityPlugin";
 import colors from "tailwindcss/colors";
 import containerQueries from "@tailwindcss/container-queries";
 
