@@ -413,7 +413,7 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
             {isConnected ? (
               <div>
                 <div style={{ marginBottom: '8px', fontSize: '16px' }}>🚀</div>
-                <div>Ready to chat with your Korean PDFs!</div>
+                <div>Ready to chat with your documents!</div>
                 <div style={{ fontSize: '12px', marginTop: '4px' }}>
                   Upload documents using the command palette or start asking questions.
                 </div>

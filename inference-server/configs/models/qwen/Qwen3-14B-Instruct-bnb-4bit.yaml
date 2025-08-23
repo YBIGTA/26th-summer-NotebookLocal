@@ -61,16 +61,15 @@ environment:
 context_window: 32768
 
 # Model description
-description: "Local Qwen3-14B model optimized for Korean language"
-use_cases: ["korean_text", "local_inference", "privacy_focused"]
+description: "Local Qwen3-14B model for general text generation"
+use_cases: ["local_inference", "privacy_focused", "general_text"]
 
 # Workflow-specific configurations
 workflows:
   qa_workflow:
     system_prompt: |
-      주어진 컨텍스트를 바탕으로 질문에 답하세요. 한국어 질문에는 한국어로 답하고, 영어 질문에는 영어로 답하세요.
-      Answer the question based on the provided context. Answer Korean questions in Korean and English questions in English.
-      컨텍스트에서 답을 찾을 수 없다면 "제공된 컨텍스트에서 이에 대한 정보를 찾을 수 없습니다"라고 말하세요.
+      Answer the question based on the provided context.
+      If you cannot find the answer in the context, say "I cannot find information about this in the provided context."
     parameters:
       temperature: 0.8  # Higher creativity for local model
       max_tokens: 2048
@@ -81,15 +80,13 @@ workflows:
       presence_penalty: 0.0
     retrieval:
       preferred_k: 4
-      context_strategy: "multilingual"  # Handle Korean/English mixed content
+      context_strategy: "standard"  # Standard context handling
     post_processing:
       max_answer_length: 3000
       add_sources: true
-      handle_korean: true
       
   summarization_workflow:
     system_prompt: |
-      제공된 내용을 간결하고 포괄적으로 요약하세요. 주요 정보를 유지하면서 핵심 내용을 추출하세요.
       Summarize the provided content concisely and comprehensively, maintaining key information.
     parameters:
       temperature: 0.6

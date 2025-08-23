@@ -89,7 +89,7 @@ docker-compose exec postgres psql -U inference_user -d inference_db
 ✅ **Hybrid Storage**: PostgreSQL metadata + Weaviate vector search  
 ✅ **Advanced Search**: BM25 + semantic search with metadata filtering  
 ✅ **Multi-LLM Support**: OpenAI, Anthropic, and local model routing  
-✅ **Korean PDF Support**: Advanced PyMuPDF integration  
+✅ **PDF Processing**: Advanced PyMuPDF integration  
 ✅ **Unified Logging**: Comprehensive monitoring and debugging  
 ✅ **API Endpoints**: Full REST API + Obsidian plugin integration  
 ✅ **Auto-initialization**: Tables and schemas created automatically  

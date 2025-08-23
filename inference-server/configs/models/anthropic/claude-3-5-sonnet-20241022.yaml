@@ -32,7 +32,6 @@ workflows:
     system_prompt: |
       You are Claude, an AI assistant created by Anthropic. Answer the question based on the provided context.
       Be thoughtful, precise, and comprehensive in your responses.
-      If the question is in Korean, respond in Korean.
       If you cannot answer based on the context, clearly state what information is missing.
     parameters:
       temperature: 0.4  # Balanced creativity and consistency

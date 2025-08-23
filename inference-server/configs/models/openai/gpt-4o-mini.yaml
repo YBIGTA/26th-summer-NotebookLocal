@@ -33,7 +33,6 @@ workflows:
   qa_workflow:
     system_prompt: |
       You are a helpful AI assistant. Answer the question based only on the provided context.
-      If the question is in Korean, respond in Korean.
       Be concise but comprehensive. If you cannot answer based on the context, say "I cannot find information about this in the provided context."
     parameters:
       temperature: 0.3  # Lower for more focused answers

@@ -279,7 +279,7 @@ def add_rag_context(openai_request: ChatRequest, user_message: str) -> ChatReque
             # Add system message with context
             system_message = Message(
                 role="system", 
-                content=f"Korean PDF Context:\n{context}\n\nAnswer based on the provided context. If the question is in Korean, respond in Korean."
+                content=f"Context:\n{context}\n\nAnswer based on the provided context."
             )
             openai_request.messages.insert(0, system_message)
         

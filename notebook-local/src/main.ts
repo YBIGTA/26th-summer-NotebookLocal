@@ -66,7 +66,7 @@ export default class NotebookLocalPlugin extends Plugin {
     // Upload Document Command
     this.addCommand({
       id: "upload-document",
-      name: "NotebookLocal: Upload Korean PDF",
+      name: "NotebookLocal: Upload Document",
       callback: () => this.uploadDocument(),
     });
 

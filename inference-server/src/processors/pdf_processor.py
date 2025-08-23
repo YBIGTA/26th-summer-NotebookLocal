@@ -6,7 +6,7 @@ import logging
 import warnings
 from dataclasses import dataclass
 
-# Suppress font warnings for Korean PDFs
+# Suppress font warnings for PDFs
 warnings.filterwarnings("ignore", message=".*FontBBox.*")
 warnings.filterwarnings("ignore", message=".*cannot be parsed as 4 floats.*")
 
@@ -40,7 +40,7 @@ class PageData:
         
         return merged_text
 
-# Try importing pymupdf first (better for Korean), fallback to pdfplumber
+# Try importing pymupdf first (better text extraction), fallback to pdfplumber
 try:
     import fitz  # pymupdf
     HAS_PYMUPDF = True
@@ -51,7 +51,7 @@ import pdfplumber
 
 
 class PDFProcessor:
-    """Extract text and images from PDF files with Korean font support."""
+    """Extract text and images from PDF files."""
 
     def extract(self, pdf_path: str) -> Tuple[str, List[Image.Image]]:
         """Extract text and images from PDF (legacy method - concatenates all pages)."""
@@ -75,7 +75,7 @@ class PDFProcessor:
         
         start_time = time.time()
         
-        # Try pymupdf first (best for Korean fonts)
+        # Try pymupdf first (best text extraction)
         if HAS_PYMUPDF:
             logger.info("Using PyMuPDF library for page-by-page extraction")
             try:
@@ -198,7 +198,7 @@ class PDFProcessor:
                         
                         logger.info(f"Processing page {page_num + 1}/{len(pdf.pages)}")
                         
-                        # Extract text with error handling for Korean fonts
+                        # Extract text with error handling
                         page_text = ""
                         try:
                             text = page.extract_text()

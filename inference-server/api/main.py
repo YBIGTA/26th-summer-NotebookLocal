@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="NotebookLocal Inference Server",
-    description="A streamlined AI system for processing Korean PDFs with modular LLM routing and Obsidian integration",
+    description="A streamlined AI system for document processing with modular LLM routing and Obsidian integration",
     version="1.0.0"
 )
 
@@ -50,7 +50,7 @@ def api_info():
         "status": "ok",
         "service": "notebook-local-inference-server",
         "version": "1.0.0",
-        "features": ["Korean PDF Processing", "Modular LLM Routing", "RAG Chat"],
+        "features": ["Document Processing", "Modular LLM Routing", "RAG Chat"],
         "endpoints": {
             "health": "/api/v1/health",
             "process": "/api/v1/process",

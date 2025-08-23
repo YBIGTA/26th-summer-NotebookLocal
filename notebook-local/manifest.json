@@ -3,7 +3,7 @@
   "name": "NotebookLocal",
   "version": "1.0.0",
   "minAppVersion": "0.15.0",
-  "description": "Korean PDF RAG system - Chat with your documents using local AI models",
+  "description": "RAG system with Obsidian integration - Chat with your documents using local AI models",
   "author": "26th Summer Research Program",
   "authorUrl": "https://github.com/your-username/26th-summer-NotebookLocal"
 }
