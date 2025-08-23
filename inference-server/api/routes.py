@@ -19,6 +19,10 @@ from src.main import LectureProcessor
 from src.llm.core.router import LLMRouter
 from src.llm.models.requests import ChatRequest, Message
 
+# Import vault and context route modules
+from .vault_routes import router as vault_router
+from .context_routes import router as context_router
+
 
 def extract_chunk_content(raw_chunk: str) -> str:
     """Extract clean text content from OpenAI streaming chunk format."""
@@ -654,3 +658,7 @@ async def debug_db_stats():
             "error": str(e),
             "traceback": traceback.format_exc()
         }
+
+# Include the vault and context route modules in the main router
+router.include_router(vault_router)
+router.include_router(context_router)

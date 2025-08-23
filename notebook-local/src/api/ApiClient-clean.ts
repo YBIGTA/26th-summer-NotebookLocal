@@ -45,6 +45,83 @@ export interface DocumentInfo {
   chunks: number;
 }
 
+// Vault management interfaces
+export interface VaultFileResponse {
+  file_id: string;
+  vault_path: string;
+  file_type?: string;
+  content_hash?: string;
+  file_size?: number;
+  modified_at?: string;
+  processing_status: string;
+  doc_uid?: string;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VaultScanRequest {
+  vault_path: string;
+  force_rescan?: boolean;
+}
+
+export interface VaultProcessRequest {
+  file_paths: string[];
+  force_reprocess?: boolean;
+}
+
+export interface VaultStatusResponse {
+  total_files: number;
+  processed: number;
+  queued: number;
+  processing: number;
+  unprocessed: number;
+  error: number;
+  last_scan?: string;
+}
+
+// RAG context interfaces
+export interface RagContextRequest {
+  enabled: boolean;
+  scope: 'whole' | 'selected' | 'folder';
+  selected_files: string[];
+  selected_folders: string[];
+  selected_tags: string[];
+  temporal_filters: Record<string, any>;
+}
+
+export interface RagContextResponse extends RagContextRequest {
+  last_updated: string;
+  file_count: number;
+  processed_file_count: number;
+}
+
+export interface ContextValidationResponse {
+  is_valid: boolean;
+  warnings: string[];
+  errors: string[];
+  stats: Record<string, number>;
+}
+
+export interface CommandParseResponse {
+  command_type: string;
+  parsed_command: string;
+  arguments: string[];
+  is_valid: boolean;
+  result?: string;
+  error?: string;
+}
+
+export interface AutocompleteResponse {
+  suggestions: Array<{
+    type: string;
+    label: string;
+    description: string;
+    icon?: string;
+    processing_status?: string;
+  }>;
+}
+
 export class ApiClient {
   private baseUrl: string;
   private timeout: number;
@@ -209,5 +286,224 @@ export class ApiClient {
     if (!response.ok) {
       throw new Error(`Failed to delete document: ${response.status}`);
     }
+  }
+
+  // ========================================
+  // Vault Management API Methods
+  // ========================================
+
+  // List vault files
+  async getVaultFiles(
+    status?: string,
+    fileType?: string,
+    limit: number = 100,
+    offset: number = 0
+  ): Promise<VaultFileResponse[]> {
+    const params = new URLSearchParams();
+    if (status) params.append('status', status);
+    if (fileType) params.append('file_type', fileType);
+    params.append('limit', limit.toString());
+    params.append('offset', offset.toString());
+
+    const response = await fetch(`${this.baseUrl}/api/v1/vault/files?${params}`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to get vault files: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  // Scan vault for changes
+  async scanVault(request: VaultScanRequest): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/api/v1/vault/scan`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Vault scan failed: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  // Process vault files
+  async processVaultFiles(request: VaultProcessRequest): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/api/v1/vault/process`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Vault processing failed: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  // Remove file from processing queue
+  async removeFromQueue(fileId: string): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/api/v1/vault/files/${fileId}`, {
+      method: 'DELETE',
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to remove from queue: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  // Get vault status
+  async getVaultStatus(): Promise<VaultStatusResponse> {
+    const response = await fetch(`${this.baseUrl}/api/v1/vault/status`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to get vault status: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  // ========================================
+  // RAG Context Management API Methods
+  // ========================================
+
+  // Set RAG context
+  async setRagContext(context: RagContextRequest): Promise<{ message: string; context: RagContextResponse }> {
+    const response = await fetch(`${this.baseUrl}/api/v1/rag/context/set`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(context),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to set RAG context: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  // Get current RAG context
+  async getRagContext(): Promise<RagContextResponse> {
+    const response = await fetch(`${this.baseUrl}/api/v1/rag/context`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to get RAG context: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  // Validate RAG context
+  async validateRagContext(context: RagContextRequest): Promise<ContextValidationResponse> {
+    const response = await fetch(`${this.baseUrl}/api/v1/rag/context/validate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ context }),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to validate RAG context: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  // Parse command
+  async parseCommand(command: string, context?: RagContextRequest): Promise<CommandParseResponse> {
+    const response = await fetch(`${this.baseUrl}/api/v1/rag/context/parse-command`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ command, context }),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to parse command: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  // Get autocomplete suggestions
+  async getAutocompleteSuggestions(
+    query: string,
+    contextType: 'file' | 'folder' | 'tag' | 'command' | 'special',
+    limit: number = 10
+  ): Promise<AutocompleteResponse> {
+    const response = await fetch(`${this.baseUrl}/api/v1/rag/context/autocomplete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query,
+        context_type: contextType,
+        limit,
+      }),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to get autocomplete suggestions: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  // Context-aware search
+  async contextAwareSearch(
+    query: string,
+    context: RagContextRequest,
+    limit: number = 5,
+    similarityThreshold: number = 0.7
+  ): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/api/v1/rag/search`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query,
+        context,
+        limit,
+        similarity_threshold: similarityThreshold,
+      }),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Context-aware search failed: ${response.status}`);
+    }
+
+    return await response.json();
   }
 }

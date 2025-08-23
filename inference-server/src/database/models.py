@@ -1,6 +1,6 @@
 """SQLAlchemy models for document and chunk metadata."""
 
-from sqlalchemy import Column, String, Integer, Text, DateTime, ForeignKey, UUID
+from sqlalchemy import Column, String, Integer, Text, DateTime, ForeignKey, UUID, CheckConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -47,6 +47,59 @@ class Document(Base):
             "ingested_at": self.ingested_at.isoformat() if self.ingested_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "chunk_count": len(self.chunks) if self.chunks else 0
+        }
+
+
+class VaultFile(Base):
+    """Vault file tracking model for Obsidian integration."""
+    
+    __tablename__ = "vault_files"
+    
+    file_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    vault_path = Column(Text, nullable=False, unique=True, index=True)
+    file_type = Column(String(10), nullable=True, index=True)
+    content_hash = Column(String(64), nullable=True)
+    file_size = Column(Integer, nullable=True)
+    modified_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    processing_status = Column(
+        String(20), 
+        nullable=False, 
+        default='unprocessed',
+        index=True
+    )
+    doc_uid = Column(UUID(as_uuid=True), ForeignKey("documents.doc_uid", ondelete="SET NULL"), nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Add constraint for processing_status values
+    __table_args__ = (
+        CheckConstraint(
+            "processing_status IN ('unprocessed', 'queued', 'processing', 'processed', 'error')",
+            name='ck_vault_files_processing_status'
+        ),
+    )
+    
+    # Relationship with document
+    document = relationship("Document", backref="vault_files")
+    
+    def __repr__(self):
+        return f"<VaultFile(file_id={self.file_id}, path='{self.vault_path}', status='{self.processing_status}')>"
+    
+    def to_dict(self):
+        """Convert to dictionary for API responses."""
+        return {
+            "file_id": str(self.file_id),
+            "vault_path": self.vault_path,
+            "file_type": self.file_type,
+            "content_hash": self.content_hash,
+            "file_size": self.file_size,
+            "modified_at": self.modified_at.isoformat() if self.modified_at else None,
+            "processing_status": self.processing_status,
+            "doc_uid": str(self.doc_uid) if self.doc_uid else None,
+            "error_message": self.error_message,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }
 
 
