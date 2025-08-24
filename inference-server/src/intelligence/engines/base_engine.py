@@ -48,6 +48,38 @@ class BaseEngine:
         # Initialize prompt manager for configurable templates
         self.prompt_manager = PromptManager(self.config_loader)
     
+    def _calculate_dynamic_tokens(self, model_name: str = None) -> int:
+        """Calculate dynamic token limit based on model's context window and engine ratios."""
+        # Get model to use
+        if not model_name:
+            model_name = self.routing_config['rules']['chat_default']
+        
+        # Find adapter for model using routing rules
+        adapter_name = None
+        for rule in self.routing_config['rules']['explicit_models']:
+            if model_name in rule['models']:
+                adapter_name = rule['adapter']
+                break
+        
+        # Load model config
+        model_config = self.config_loader.load_config(f'configs/models/{adapter_name}/{model_name}.yaml')
+        
+        # Get token allocation config
+        token_allocation = self.routing_config['intelligence']['token_allocation']
+        context_window_ratio = token_allocation['context_window_ratio']
+        engine_ratios = token_allocation['engine_ratios']
+        
+        # Calculate dynamic token limit
+        context_window = model_config['context_window']
+        total_allocated = int(context_window * context_window_ratio)
+        engine_ratio = engine_ratios[self.engine_name.lower()]
+        dynamic_tokens = int(total_allocated * engine_ratio)
+        
+        self.logger.info(f"Dynamic tokens for {self.engine_name}: {dynamic_tokens} "
+                       f"(model: {model_name}, adapter: {adapter_name}, ratio: {engine_ratio})")
+        
+        return dynamic_tokens
+    
     async def process(
         self,
         message: str,
@@ -93,11 +125,9 @@ class BaseEngine:
             # Use config-based parameters - NO FALLBACKS
             if 'temperature' not in self.engine_config:
                 raise ValueError(f"temperature not configured for engine {self.engine_name}")
-            if 'max_tokens' not in self.engine_config:
-                raise ValueError(f"max_tokens not configured for engine {self.engine_name}")
             
             config_temperature = self.engine_config['temperature']
-            config_max_tokens = self.engine_config['max_tokens']
+            config_max_tokens = self._calculate_dynamic_tokens(model_to_use)
             
             request = ChatRequest(
                 messages=[
@@ -142,13 +172,13 @@ class BaseEngine:
         
         # Get prompts from template system
         system_prompt = self.prompt_manager.get_system_prompt(
-            engine_name=self.engine_name.lower().replace('engine', ''),
+            engine_name=self.engine_name,
             sub_capability=sub_capability,
             variables=template_variables
         )
         
         user_prompt = self.prompt_manager.get_user_prompt(
-            engine_name=self.engine_name.lower().replace('engine', ''),
+            engine_name=self.engine_name,
             sub_capability=sub_capability,
             message=message,
             context=context,
@@ -208,7 +238,7 @@ class BaseEngine:
     
     def _extract_source_citations(self, response_text: str, context_pyramid: ContextPyramid) -> List[str]:
         """Extract and format source citations from response."""
-        sources = self.context_engine.get_context_sources(context_pyramid)
+        sources = [item.source_path for item in context_pyramid.items]
         
         # Filter sources to only those actually referenced in response
         referenced_sources = []

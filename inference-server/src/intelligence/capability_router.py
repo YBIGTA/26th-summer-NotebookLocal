@@ -12,7 +12,7 @@ import logging
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 
-from .context_engine import ContextEngine, ContextPyramid
+from .context_engine_clean import ContextEngineClean, ContextPyramid
 from .intent_detector import IntentDetector, DetectedIntent, IntentType
 from .engines.understand_engine import UnderstandEngine
 from .engines.navigate_engine import NavigateEngine
@@ -39,7 +39,7 @@ class CapabilityRouter:
     
     def __init__(
         self,
-        context_engine: ContextEngine,
+        context_engine: ContextEngineClean,
         intent_detector: IntentDetector,
         understand_engine: UnderstandEngine,
         navigate_engine: NavigateEngine,
@@ -53,7 +53,7 @@ class CapabilityRouter:
         # Load intelligence config for token limits
         self.config_loader = ConfigLoader()
         self.intelligence_config = self.config_loader.load_config('configs/routing.yaml')
-        self.context_config = self.intelligence_config['context']
+        self.token_allocation = self.intelligence_config['intelligence']['token_allocation']
         
         # The five capability engines
         self.engines = {
@@ -149,9 +149,8 @@ class CapabilityRouter:
     ) -> ContextPyramid:
         """Build context pyramid optimized for specific intent type."""
         
-        # Adjust context building strategy based on intent using config-based token limits
-        intent_name = intent.intent_type.name.lower()
-        max_tokens = self.context_config['token_limits'].get(intent_name, self.context_engine.max_tokens)
+        # Use context engine's own token calculation
+        max_tokens = None  # Let context engine calculate its own tokens
         
         if intent.intent_type == IntentType.UNDERSTAND:
             # For questions, prioritize semantic similarity and current note
@@ -269,7 +268,7 @@ class CapabilityRouter:
             },
             'total_engines': len(self.engines),
             'context_engine': {
-                'max_tokens': self.context_engine.max_tokens,
+                'dynamic_tokens': True,
                 'supports_pyramid': True
             }
         }

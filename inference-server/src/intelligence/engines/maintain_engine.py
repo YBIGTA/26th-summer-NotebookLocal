@@ -24,7 +24,7 @@ class MaintainEngine(BaseEngine):
     """Keep vault healthy and well-organized."""
     
     def __init__(self, llm_router):
-        super().__init__(llm_router, "MaintainEngine")
+        super().__init__(llm_router, "maintain")
     
     async def process(
         self,

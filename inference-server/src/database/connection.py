@@ -78,8 +78,8 @@ def _create_additional_indexes():
 
 
 def get_db_connection():
-    """Get raw database connection for direct SQL queries."""
-    return engine.raw_connection()
+    """Get database connection for direct SQL queries."""
+    return engine.connect()
 
 
 def test_connection():

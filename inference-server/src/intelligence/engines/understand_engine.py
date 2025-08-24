@@ -22,7 +22,7 @@ class UnderstandEngine(BaseEngine):
     """Answer questions using vault content as authoritative source."""
     
     def __init__(self, llm_router):
-        super().__init__(llm_router, "UnderstandEngine")
+        super().__init__(llm_router, "understand")
     
     async def process(
         self,

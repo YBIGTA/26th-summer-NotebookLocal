@@ -42,17 +42,19 @@ engines:
         system: |
           {{base_system}}
 
-          Your specialty is answering direct questions factually and precisely:
-          - Give clear, direct answers
-          - Quote relevant passages when helpful
-          - Indicate certainty level if information is partial
+          Your specialty is answering questions comprehensively and helpfully:
+          - Provide detailed, thorough answers when possible
+          - Quote relevant passages and explain their significance
+          - Give context and background information from the vault
+          - Connect related concepts and provide comprehensive explanations
+          - When information is available, be generous with details rather than brief
 
         user_template: |
           Question: {{message}}
 
           {{context_template}}
 
-          Please answer the question using ONLY the information provided in the context above. If the information is not available in the context, clearly state that.
+          Please provide a detailed, comprehensive answer using the information from the context above. Include relevant quotes, explain concepts thoroughly, and provide as much helpful detail as possible. If some information is not available in the context, clearly state what's missing while still providing all available relevant information.
 
       explanation:
         system: |

@@ -24,7 +24,7 @@ class SynthesizeEngine(BaseEngine):
     """Extract patterns and generate insights from multiple notes."""
     
     def __init__(self, llm_router):
-        super().__init__(llm_router, "SynthesizeEngine")
+        super().__init__(llm_router, "synthesize")
     
     async def process(
         self,

@@ -13,18 +13,8 @@ from typing import Dict, List, Any, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
-from src.intelligence.context_engine import ContextEngine
-from src.intelligence.intent_detector import IntentDetector
-from src.intelligence.capability_router import CapabilityRouter
-from src.intelligence.engines import (
-    UnderstandEngine, NavigateEngine, TransformEngine, 
-    SynthesizeEngine, MaintainEngine
-)
-from src.storage.hybrid_store import HybridStore
-from src.processors.embedder import Embedder
-from src.llm.core.router import LLMRouter
-from src.database.models import VaultFile
-from src.database.connection import get_db_connection
+from src.intelligence.intelligence_service import IntelligenceService, intelligence_service
+from src.database.file_manager import FileManager, file_manager
 
 logger = logging.getLogger(__name__)
 
@@ -55,64 +45,41 @@ class CapabilityInfoResponse(BaseModel):
     total_engines: int
     context_engine: Dict[str, Any]
 
-# Global capability router instance
-_capability_router = None
+# Global intelligence service instance
+_intelligence_service = None
 
-# Dependency to get capability router
-async def get_capability_router() -> CapabilityRouter:
-    """Initialize and return capability router with all engines."""
+# Dependency to get intelligence service
+async def get_intelligence_service() -> IntelligenceService:
+    """Initialize and return intelligence service with clean dependencies."""
     
-    global _capability_router
+    global _intelligence_service
     
-    if _capability_router is not None:
-        return _capability_router
+    if _intelligence_service is not None:
+        return _intelligence_service
     
     try:
-        # Get singletons from main processor (already initialized with config)
+        # Get configured components from main processor
         from api.routes import processor
         
-        # Use existing configured components
-        llm_router = LLMRouter.get_instance()
-        
-        # Get embedder from processor (already initialized with router)
-        embedder = processor.embedder
-        
-        # Get hybrid store from processor (already initialized) 
-        hybrid_store = processor.store
-        
-        # Initialize context engine and intent detector
-        context_engine = ContextEngine(hybrid_store, embedder)
-        intent_detector = IntentDetector(llm_router)
-        
-        # Initialize all capability engines
-        understand_engine = UnderstandEngine(llm_router)
-        navigate_engine = NavigateEngine(llm_router, hybrid_store)
-        transform_engine = TransformEngine(llm_router)
-        synthesize_engine = SynthesizeEngine(llm_router)
-        maintain_engine = MaintainEngine(llm_router)
-        
-        # Create capability router
-        _capability_router = CapabilityRouter(
-            context_engine=context_engine,
-            intent_detector=intent_detector,
-            understand_engine=understand_engine,
-            navigate_engine=navigate_engine,
-            transform_engine=transform_engine,
-            synthesize_engine=synthesize_engine,
-            maintain_engine=maintain_engine
+        # Initialize intelligence service with existing components
+        _intelligence_service = IntelligenceService(
+            file_manager=file_manager,
+            hybrid_store=processor.store,
+            embedder=processor.embedder,
+            llm_router=None  # Will use default singleton
         )
         
-        logger.info("✅ Capability router initialized with existing configured components")
-        return _capability_router
+        logger.info("✅ IntelligenceService initialized with clean dependencies")
+        return _intelligence_service
         
     except Exception as e:
-        logger.error(f"Failed to initialize capability router: {e}")
+        logger.error(f"Failed to initialize intelligence service: {e}")
         raise HTTPException(status_code=500, detail=f"Intelligence system initialization failed: {str(e)}")
 
 @router.post("/chat", response_model=IntelligenceResponse)
 async def intelligent_chat(
     request: IntelligenceRequest,
-    router: CapabilityRouter = Depends(get_capability_router)
+    service: IntelligenceService = Depends(get_intelligence_service)
 ):
     """
     Main intelligence endpoint - processes natural language with full context awareness.
@@ -128,29 +95,27 @@ async def intelligent_chat(
     try:
         logger.info(f"🧠 Intelligence request: '{request.message[:50]}...'")
         
-        # Get vault files for context building
-        vault_files = await _get_vault_files()
-        
-        # Process message with full intelligence
-        response = await router.process_message(
+        # Process message using clean intelligence service
+        response_dict = await service.process_intelligent_message(
             message=request.message,
             current_note_path=request.current_note_path,
-            conversation_history=request.conversation_history or [],
-            vault_files=vault_files,
-            mentioned_files=request.mentioned_files or [],
-            mentioned_folders=request.mentioned_folders or []
+            conversation_history=request.conversation_history,
+            session_id=request.session_id,
+            max_tokens=request.max_tokens,
+            mentioned_files=request.mentioned_files,
+            mentioned_folders=request.mentioned_folders
         )
         
         # Return structured response
         return IntelligenceResponse(
-            content=response.content,
-            sources=response.sources,
-            confidence=response.confidence,
-            intent_type=response.intent_type,
-            sub_capability=response.sub_capability,
-            metadata=response.metadata,
-            suggested_actions=response.suggested_actions,
-            session_id=request.session_id
+            content=response_dict['content'],
+            sources=response_dict['sources'],
+            confidence=response_dict['confidence'],
+            intent_type=response_dict['intent_type'],
+            sub_capability=response_dict['sub_capability'],
+            metadata=response_dict['metadata'],
+            suggested_actions=response_dict['suggested_actions'],
+            session_id=response_dict['session_id']
         )
         
     except Exception as e:
@@ -158,16 +123,16 @@ async def intelligent_chat(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/capabilities", response_model=CapabilityInfoResponse)
-async def get_capabilities(router: CapabilityRouter = Depends(get_capability_router)):
+async def get_capabilities(service: IntelligenceService = Depends(get_intelligence_service)):
     """Get information about available intelligence capabilities."""
     
     try:
-        info = router.get_capability_info()
+        capabilities = service.get_capabilities()
         
         return CapabilityInfoResponse(
-            capabilities=info['capabilities'],
-            total_engines=info['total_engines'],
-            context_engine=info['context_engine']
+            capabilities=capabilities['engines'],
+            total_engines=len(capabilities['engines']),
+            context_engine=capabilities['features']
         )
         
     except Exception as e:
@@ -177,24 +142,18 @@ async def get_capabilities(router: CapabilityRouter = Depends(get_capability_rou
 @router.post("/intent/detect")
 async def detect_intent(
     request: IntelligenceRequest,
-    router: CapabilityRouter = Depends(get_capability_router)
+    service: IntelligenceService = Depends(get_intelligence_service)
 ):
     """Detect intent from natural language message (useful for UI hints)."""
     
     try:
-        detected_intent = await router.intent_detector.detect_intent(
-            request.message,
-            request.current_note_path,
-            request.conversation_history
+        intent_result = await service.detect_intent(
+            message=request.message,
+            current_note_path=request.current_note_path,
+            conversation_history=request.conversation_history
         )
         
-        return {
-            "intent_type": detected_intent.intent_type.value,
-            "confidence": detected_intent.confidence,
-            "sub_capability": detected_intent.sub_capability,
-            "parameters": detected_intent.parameters,
-            "reasoning": detected_intent.reasoning
-        }
+        return intent_result
         
     except Exception as e:
         logger.error(f"Intent detection error: {e}")
@@ -205,84 +164,22 @@ async def build_context(
     query: str,
     current_note_path: Optional[str] = None,
     max_tokens: Optional[int] = None,
-    router: CapabilityRouter = Depends(get_capability_router)
+    service: IntelligenceService = Depends(get_intelligence_service)
 ):
     """Build context pyramid for a query (useful for debugging and preview)."""
     
     try:
-        vault_files = await _get_vault_files()
-        
-        context_pyramid = await router.context_engine.build_context_pyramid(
+        context_preview = await service.build_context_preview(
             query=query,
             current_note_path=current_note_path,
-            vault_files=vault_files,
             max_tokens=max_tokens
         )
         
-        validation = router.context_engine.validate_context_pyramid(context_pyramid)
-        sources = router.context_engine.get_context_sources(context_pyramid)
-        
-        return {
-            "total_items": len(context_pyramid.items),
-            "total_tokens": context_pyramid.total_tokens,
-            "truncated": context_pyramid.truncated,
-            "sources": sources,
-            "validation": validation,
-            "built_at": context_pyramid.built_at.isoformat(),
-            "items": [
-                {
-                    "source_path": item.source_path,
-                    "relevance_score": item.relevance_score,
-                    "context_type": item.context_type,
-                    "token_count": item.token_count,
-                    "preview": item.content[:200] + "..." if len(item.content) > 200 else item.content
-                }
-                for item in context_pyramid.items
-            ]
-        }
+        return context_preview
         
     except Exception as e:
         logger.error(f"Context building error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Helper functions
-async def _get_vault_files() -> List[VaultFile]:
-    """Get all vault files from database."""
-    
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT file_id, vault_path, file_type, content_hash, file_size, 
-                       modified_at, processing_status, doc_uid, error_message,
-                       created_at, updated_at
-                FROM vault_files 
-                ORDER BY modified_at DESC
-            """)
-            
-            results = cursor.fetchall()
-            
-            # Convert to VaultFile objects
-            vault_files = []
-            for row in results:
-                vault_file = VaultFile(
-                    file_id=row[0],
-                    vault_path=row[1],
-                    file_type=row[2],
-                    content_hash=row[3],
-                    file_size=row[4],
-                    modified_at=row[5],
-                    processing_status=row[6],
-                    doc_uid=row[7],
-                    error_message=row[8],
-                    created_at=row[9],
-                    updated_at=row[10]
-                )
-                vault_files.append(vault_file)
-            
-            logger.info(f"📚 Retrieved {len(vault_files)} vault files")
-            return vault_files
-            
-    except Exception as e:
-        logger.error(f"Error getting vault files: {e}")
-        return []
+# All helper functions removed - using clean IntelligenceService and FileManager now

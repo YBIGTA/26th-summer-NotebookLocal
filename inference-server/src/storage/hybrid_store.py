@@ -434,6 +434,7 @@ class HybridStore:
                         "section": chunk.section,
                         "document": {
                             "title": doc.title,
+                            "path": doc.path,
                             "author": doc.author,
                             "source_type": doc.source_type,
                             "lang": doc.lang,

@@ -1,6 +1,6 @@
-# Inference Server - FastAPI Backend for RAG System
+# Inference Server - Context-Aware Intelligence System
 
-The **Inference Server** is the core backend component that handles document processing, vector storage, and AI model integration for the NotebookLocal RAG system with advanced Obsidian vault integration.
+The **Inference Server** is the core backend of the NotebookLocal RAG system featuring **Context-Aware Intelligence** - an advanced AI architecture that understands *why* you're asking something, not just *what* you're asking. Instead of generic search → retrieve → answer, it models **five fundamental ways humans interact with knowledge**.
 
 ## 🏗️ Architecture Overview
 
@@ -46,6 +46,351 @@ graph TB
     MODELS --> PG
     MIGRATIONS --> PG
 ```
+
+## 🧠 **Context-Aware Intelligence Architecture**
+
+### **Ideological Foundation: Second Brain Philosophy**
+
+Your system treats the vault as a **"second brain"** that should understand *why* you're asking something, not just *what* you're asking. It models **five fundamental ways humans interact with knowledge**:
+
+1. **🤔 UNDERSTAND** - "What does this mean?" (traditional Q&A)
+2. **🧭 NAVIGATE** - "What should I read next?" (discovery & exploration)  
+3. **✏️ TRANSFORM** - "Make this better" (editing & improvement)
+4. **🔍 SYNTHESIZE** - "What patterns emerge?" (analysis across notes)
+5. **🔧 MAINTAIN** - "Fix my vault" (organization & health)
+
+This mirrors how you naturally think about your notes - sometimes you want answers, sometimes you want to explore, sometimes you want to improve content.
+
+### **Technical Architecture: Intent Routing Flow**
+
+```mermaid
+graph TD
+    A[User Message] --> B[Intent Detector]
+    B --> C{Pattern Confident?}
+    C -->|Yes| D[Use Pattern Result]
+    C -->|No| E[LLM Classification]
+    E --> F[Combine Pattern + LLM]
+    F --> G[Context Engine]
+    G --> H[Build Context Pyramid]
+    H --> I[Route to Capability Engine]
+    I --> J[Generate Response with Sources]
+```
+
+#### **1. Intent Detection Pipeline**
+
+**Pattern-Based Detection (Fast):**
+- Regex patterns for each intent type
+- "what/how/why" → UNDERSTAND  
+- "find/search" → NAVIGATE
+- "rewrite/improve" → TRANSFORM
+- etc.
+
+**LLM-Based Detection (Nuanced):**
+- Falls back to LLM when patterns aren't confident enough
+- Uses configurable prompts from `configs/prompts.yaml`
+- Returns JSON with intent, confidence, sub-capability, reasoning
+
+**Example:**
+```python
+# Pattern matching finds "what" and "explain" → UNDERSTAND intent
+# But LLM can detect nuanced cases like:
+# "I'm struggling to understand the connection between X and Y"
+# → NAVIGATE intent (finding connections) rather than UNDERSTAND
+```
+
+#### **2. Context Pyramid Construction**
+
+The **most sophisticated part** - your `ContextEngine` builds a "pyramid" of relevance-ranked information:
+
+```
+Layer 0: @mentions (files/folders explicitly referenced)  ← Highest Priority
+Layer 1: Current note (if editing)
+Layer 2: Linked notes ([[wikilinks]] from current note)  
+Layer 3: Semantically similar notes (vector search)
+Layer 4: Recent notes (temporal context)
+Layer 5: Tagged notes (#shared-tags)                     ← Lowest Priority
+```
+
+**Token Budget Management:**
+- 60% reserved for @mentions and current note
+- 30% for linked notes and semantic results  
+- 10% for recent/tagged context
+- Smart truncation prevents context overflow
+
+#### **3. Capability Engine Routing**
+
+Each intent type has a specialized engine with **sub-capabilities**:
+
+```
+🤔 UNDERSTAND Engine:
+  ├── question_answer (direct Q&A)
+  ├── explanation (deeper explanations)  
+  ├── verification (fact-checking)
+  └── definition (concept clarification)
+
+🧭 NAVIGATE Engine:
+  ├── search (find specific content)
+  ├── discover (explore related ideas)
+  ├── recommend (suggest next reading)
+  └── browse (general exploration)
+
+✏️ TRANSFORM Engine:
+  ├── rewrite (rephrase content)
+  ├── restructure (reorganize)
+  ├── format (style changes)
+  └── improve (enhance clarity)
+
+🔍 SYNTHESIZE Engine:
+  ├── summarize (distill key points)
+  ├── analyze (extract patterns)
+  ├── compare (contrast ideas)
+  └── timeline (temporal analysis)
+
+🔧 MAINTAIN Engine:
+  ├── health_check (vault diagnostics)
+  ├── fix_links (repair broken links)
+  ├── organize (structural cleanup)
+  └── find_duplicates (identify redundancy)
+```
+
+## 🎯 **The Five Core Intelligence Functions**
+
+### **1. 🤔 UNDERSTAND Engine - "What does this mean?"**
+
+**Philosophy:** Answer questions using vault content as ground truth. Never invent information not in the vault.
+
+**Core Behaviors:**
+- Always cite which notes information comes from
+- Understand questions in context of current work
+- Detect when information is missing and say so
+- Provide grounded, fact-based responses
+
+**Sub-capabilities:**
+- **question_answer**: Direct Q&A from vault content
+- **explanation**: Deeper explanations of concepts
+- **verification**: Fact-checking against your notes
+- **definition**: Define terms based on your usage
+
+**Example Query:** *"What did I conclude about transformers in my AI research? @research/papers"*
+
+**Response Format:**
+```
+Based on your research notes, you concluded that transformers revolutionized NLP through:
+
+1. **Self-attention mechanisms** (from ai-research.md)
+   - Allow parallel processing unlike RNNs
+   - Can focus on any part of the sequence
+
+2. **Positional encoding** (from attention-mechanisms.md)  
+   - Solves the position problem without recurrence
+   - Your note mentions this was the "breakthrough insight"
+
+Sources: 📄 ai-research.md, 🔗 attention-mechanisms.md
+```
+
+### **2. 🧭 NAVIGATE Engine - "What should I read next?"**
+
+**Philosophy:** Help users discover and explore their knowledge. Find forgotten content and suggest connections.
+
+**Core Behaviors:**
+- Find notes user forgot they wrote
+- Suggest missing connections between notes
+- Identify related content by meaning, not just keywords
+- Recommend reading paths and exploration routes
+
+**Sub-capabilities:**
+- **search**: Find specific content with semantic + keyword search
+- **discover**: Rediscover forgotten connections and insights
+- **recommend**: Suggest personalized reading paths
+- **browse**: Explore vault structure and organization
+
+**Example Query:** *"I feel like I've written about learning strategies before but can't remember what I concluded"*
+
+**Response Format:**
+```
+🔮 Rediscovered Insights:
+
+You actually wrote extensively about learning strategies! Here's what I found:
+
+📋 **Forgotten Conclusions:**
+- In "study-methods.md", you concluded spaced repetition works best for you
+- In "productivity.md", you noted morning learning sessions are 3x more effective
+
+🔗 **Hidden Connections:**  
+- Your note on "flow states" mentions the same focus techniques
+- You independently discovered the Feynman technique in 2 different notes
+
+🎯 **Recommended Next Steps:**
+1. **multihead-attention.md** - Natural next step after attention basics
+2. **vision-transformers.md** - You love cross-domain applications
+```
+
+### **3. ✏️ TRANSFORM Engine - "Make this better"**
+
+**Philosophy:** Intelligently edit and restructure content while preserving the user's voice and important elements.
+
+**Core Behaviors:**
+- Always preserve [[links]] and #tags exactly
+- Maintain user's voice and style
+- Show preview before applying changes
+- Support rewrite, restructure, format, and improve operations
+
+**Sub-capabilities:**
+- **rewrite**: Rephrase content for clarity or different audience
+- **restructure**: Reorganize information with better flow
+- **format**: Apply markdown formatting and styling
+- **improve**: General content enhancement and cleanup
+
+**Example Query:** *"Make this explanation of attention mechanisms clearer for beginners"*
+
+**Response Format:**
+```
+✏️ **Improved Version:**
+
+## Attention Mechanisms in AI (Beginner-Friendly)
+
+**What it is:** Think of attention like a spotlight in a dark room...
+[Clear, restructured content with preserved [[links]] and #tags]
+
+**Key Changes Made:**
+- Added beginner-friendly analogies
+- Simplified technical jargon  
+- Improved paragraph flow
+- Preserved all your [[wikilinks]] and #machinelearning tags
+```
+
+### **4. 🔍 SYNTHESIZE Engine - "What patterns emerge?"**
+
+**Philosophy:** Extract patterns and generate insights across multiple notes that the user hasn't explicitly connected.
+
+**Core Behaviors:**
+- Find patterns across time periods
+- Identify recurring themes and contradictions  
+- Spot evolving thinking patterns
+- Generate insights user hasn't explicitly noted
+
+**Sub-capabilities:**
+- **summarize**: Distill key points across multiple notes
+- **analyze**: Extract hidden patterns and themes
+- **compare**: Contrast ideas and identify contradictions
+- **timeline**: Show how thinking evolved over time
+
+**Example Query:** *"What patterns emerge from my productivity experiments over the past year?"*
+
+**Response Format:**
+```
+🔍 **Productivity Patterns Analysis**
+
+**📈 Evolution Over Time:**
+- Jan-Mar 2024: Focus on time-blocking (initial enthusiasm)
+- Apr-Jun 2024: Shift to energy management (burnout period)
+- Jul-Sep 2024: Integration of both approaches (maturation)
+
+**🎯 Recurring Themes:**
+1. **Morning advantage** - mentioned in 8 different experiments
+2. **Context switching costs** - consistently your biggest challenge
+3. **External accountability** - works when you actually use it
+
+**⚡ Key Insight You Haven't Explicitly Noted:**
+Your most successful periods combine morning deep work with afternoon social accountability - but you've never tried intentionally scheduling both together.
+```
+
+### **5. 🔧 MAINTAIN Engine - "Fix my vault"**
+
+**Philosophy:** Keep vault healthy and well-organized. Identify issues proactively without forcing solutions.
+
+**Core Behaviors:**
+- Identify issues without user asking
+- Suggest fixes, don't force them
+- Preserve user's organizational system
+- Batch similar fixes for efficiency
+
+**Sub-capabilities:**
+- **health_check**: Comprehensive vault health analysis
+- **fix_links**: Repair broken [[wikilinks]] and references
+- **organize**: Structural cleanup and organization suggestions
+- **find_duplicates**: Identify redundant or similar content
+
+**Example Query:** *"Check my vault health and suggest improvements"*
+
+**Response Format:**
+```
+🔧 **Vault Health Report**
+
+**Overall Status:** 🟡 Good (7.2/10)
+
+**📊 Health Metrics:**
+- 847 notes total
+- 23 broken [[links]] found
+- 5 orphaned notes (no incoming links)
+- 3 potential duplicates detected
+
+**🔧 Suggested Improvements:**
+1. **Fix broken links** (Priority: High)
+   - [[transformer-attention]] → Should be [[attention-mechanisms]]  
+   - [[daily-2024-13-01]] → Invalid date format
+
+2. **Organize loose notes** (Priority: Medium)
+   - 12 notes in root could move to appropriate folders
+   - Consider creating an index for your AI research cluster
+
+3. **Merge duplicates** (Priority: Low)
+   - "attention-mechanisms.md" and "attention-models.md" have 85% overlap
+```
+
+## 🌟 **Key Innovations**
+
+### **1. @Mention System**
+```python
+# Highest priority context - user explicitly wants this content
+mentioned_files = ["research/transformers.md", "notes/ai-conclusions.md"] 
+mentioned_folders = ["research/papers/"]
+# Gets 60% of token budget automatically
+```
+When you use `@filename.md` or `@folder/` in your queries, those files get **highest priority** in the context pyramid, ensuring the AI focuses on exactly what you want.
+
+### **2. Configurable Everything**
+```yaml
+# configs/routing.yaml
+intelligence:
+  use_chat_default: true  # Use single model for all operations
+  engines:
+    understand:
+      temperature: 0.3    # Precise for Q&A
+    transform: 
+      temperature: 0.7    # Creative for editing
+  context:
+    max_tokens: 8000
+    token_limits:
+      navigate: 9600      # 20% more for discovery
+      synthesize: 12000   # 50% more for pattern finding
+```
+
+### **3. No Fallback Architecture**
+```python
+# Your system explicitly validates config - no silent defaults
+if 'temperature' not in self.engine_config:
+    raise ValueError(f"temperature not configured for engine {self.engine_name}")
+```
+Every parameter must be explicitly configured. No hidden defaults that might cause unexpected behavior.
+
+### **4. Context Validation & Quality Assessment**
+```python
+def _estimate_confidence(self, context_pyramid, intent, response_length):
+    base_confidence = intent.confidence
+    # Boost for rich context, penalize for truncation
+    context_boost = len(context_pyramid.items) * 0.05 
+    if context_pyramid.truncated:
+        context_boost -= 0.1
+```
+Smart confidence scoring based on context quality, ensuring you know when responses are well-grounded vs. uncertain.
+
+### **5. Vault-Native Understanding**
+- **[[Wikilinks]]**: Follows your note connections automatically
+- **#Tags**: Understands your categorization system  
+- **@Mentions**: Direct file/folder references get priority
+- **Temporal Context**: Considers when notes were created/modified
+- **Folder Structure**: Respects your organizational system
 
 ## 🎯 **Core Features**
 
@@ -98,6 +443,18 @@ inference-server/
 │   │   ├── __init__.py
 │   │   ├── connection.py        # PostgreSQL connection setup
 │   │   └── models.py            # SQLAlchemy models
+│   ├── intelligence/            # Context-Aware Intelligence System
+│   │   ├── __init__.py
+│   │   ├── intent_detector.py   # Intent routing with pattern + LLM
+│   │   ├── context_engine.py    # Context pyramid construction  
+│   │   ├── prompt_manager.py    # Configurable Jinja2 templates
+│   │   └── engines/             # Five core capability engines
+│   │       ├── base_engine.py   # Shared engine functionality
+│   │       ├── understand_engine.py    # Q&A with vault grounding
+│   │       ├── navigate_engine.py      # Discovery and exploration
+│   │       ├── transform_engine.py     # Content editing
+│   │       ├── synthesize_engine.py    # Pattern extraction  
+│   │       └── maintain_engine.py      # Vault health
 │   ├── llm/                     # LLM routing and adapters
 │   │   ├── __init__.py
 │   │   ├── core/
@@ -108,9 +465,17 @@ inference-server/
 │   ├── storage/                 # Vector and hybrid storage
 │   │   ├── __init__.py
 │   │   └── hybrid_store.py      # Weaviate + PostgreSQL integration
+│   ├── vault/                   # Enhanced file management
+│   │   ├── __init__.py
+│   │   ├── file_queue_manager.py   # Thread-safe queue with locking
+│   │   └── file_watcher.py         # Real-time file change detection  
 │   └── workflows/               # LangChain workflow implementations
 │       ├── __init__.py
 │       └── qa_workflow.py       # Question-answering pipeline
+│
+├── configs/                     # Configuration files
+│   ├── routing.yaml            # Model routing and intelligence settings
+│   └── prompts.yaml            # Jinja2 prompt templates
 │
 └── migrations/                  # Database schema management
     ├── versions/
@@ -942,10 +1307,47 @@ PROCESSING_CONFIG = {
 
 ---
 
+## 🚀 **Why This Architecture Is Powerful**
+
+1. **🧠 Intent-Aware**: Understands *why* you're asking, not just *what*
+2. **🎯 Context-Smart**: Builds relevance pyramids instead of random retrieval  
+3. **🔧 Modular**: Each capability is specialized and configurable
+4. **📚 Vault-Native**: Understands your note structure (links, tags, @mentions)
+5. **📈 Adaptive**: Learns from your patterns and adjusts accordingly
+
+**The Result:** An AI that feels like it **actually understands your vault** rather than just searching through it. It's like having a research assistant who has read everything you've ever written and knows how you think.
+
+### **Complete Request Flow Example**
+
+**User:** *"What did I conclude about transformers in my AI research? @research/papers"*
+
+1. **Intent Detection:**
+   - Pattern: "what" + "conclude" → UNDERSTAND intent
+   - Sub-capability: "question_answer"
+   - Confidence: 0.8
+
+2. **Context Building:**
+   - Layer 0: `@research/papers` folder gets highest priority (60% tokens)
+   - Layer 3: Semantic search for "transformers" + "AI research"
+   - Layer 4: Recent notes in case of new insights
+
+3. **Engine Processing:**
+   - Routes to `UnderstandEngine.question_answer()`
+   - Uses context pyramid to generate answer
+   - Cites specific sources from context
+
+4. **Response:**
+   - Direct answer with vault citations
+   - Confidence score based on context quality
+   - Suggested actions: "Explore connections", "Find related papers"
+
+---
+
 **Built for the NotebookLocal RAG System**
-- FastAPI backend with comprehensive vault integration
-- Real-time processing status tracking
-- Advanced RAG context management  
-- Scalable document processing pipeline
+- **Context-Aware Intelligence** with 5 specialized capability engines
+- **Advanced Intent Routing** with pattern + LLM classification
+- **Vault-Native Understanding** of your knowledge structure
+- **Real-time File Management** with queue-based processing
+- **Configurable Architecture** with no hidden defaults
 
 For integration with the Obsidian plugin, see: [📝 Plugin README](../notebook-local/README.md)

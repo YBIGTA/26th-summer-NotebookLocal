@@ -28,33 +28,31 @@ intelligence:
   engines:
     understand:
       temperature: 0.3
-      max_tokens: 1000
       
     navigate:
       temperature: 0.4
-      max_tokens: 800
       
     transform:
       temperature: 0.3
-      max_tokens: 1200
       
     synthesize:
       temperature: 0.2
-      max_tokens: 1500
       
     maintain:
       temperature: 0.1
-      max_tokens: 800
 
-  # Context building configuration
-  context:
-    max_tokens: 8000
-    token_limits:
-      understand: 8000
-      navigate: 9600    # 20% more for discovery
-      transform: 4800   # 40% less, focus on current content  
-      synthesize: 12000 # 50% more for pattern finding
-      maintain: 6400    # 20% less for structural tasks
+  # Dynamic token allocation based on model capabilities
+  token_allocation:
+    # Use percentage of model's context_window for context building
+    context_window_ratio: 0.6  # Use 60% of model's context window
+    
+    # Engine ratios (percentages of allocated context)
+    engine_ratios:
+      understand: 0.15    # 15% - Simple comprehension
+      navigate: 0.25      # 25% - Discovery and exploration
+      transform: 0.10     # 10% - Focused code changes
+      synthesize: 0.35    # 35% - Complex analysis and patterns
+      maintain: 0.15      # 15% - Structural maintenance
 
   # Intent detection configuration  
   intent_detection:

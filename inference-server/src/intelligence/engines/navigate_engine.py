@@ -24,7 +24,7 @@ class NavigateEngine(BaseEngine):
     """Help users discover and navigate their knowledge."""
     
     def __init__(self, llm_router, hybrid_store):
-        super().__init__(llm_router, "NavigateEngine")
+        super().__init__(llm_router, "navigate")
         self.store = hybrid_store
     
     async def process(

@@ -284,8 +284,23 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
     });
   };
 
-  const toggleNodeSelection = (nodePath: string, isMultiSelect: boolean = false) => {
+  const toggleNodeSelection = (nodePath: string, isMultiSelect: boolean = false, isShiftSelect: boolean = false) => {
     setSelectedNodes(prev => {
+      if (isShiftSelect && prev.size > 0) {
+        // Shift+click: select range from last selected to current
+        const allNodes = getAllVisibleNodePaths(filteredAndSortedTree);
+        const currentIndex = allNodes.indexOf(nodePath);
+        const lastSelected = Array.from(prev).pop();
+        const lastIndex = lastSelected ? allNodes.indexOf(lastSelected) : -1;
+        
+        if (currentIndex !== -1 && lastIndex !== -1) {
+          const start = Math.min(currentIndex, lastIndex);
+          const end = Math.max(currentIndex, lastIndex);
+          const rangeNodes = allNodes.slice(start, end + 1);
+          return new Set([...prev, ...rangeNodes]);
+        }
+      }
+      
       const next = new Set(isMultiSelect ? prev : []);
       if (prev.has(nodePath)) {
         next.delete(nodePath);
@@ -294,6 +309,20 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
       }
       return next;
     });
+  };
+  
+  const getAllVisibleNodePaths = (nodes: FileNode[]): string[] => {
+    const paths: string[] = [];
+    const traverse = (nodeList: FileNode[]) => {
+      nodeList.forEach(node => {
+        paths.push(node.path);
+        if (node.type === 'folder' && node.isExpanded && node.children) {
+          traverse(node.children);
+        }
+      });
+    };
+    traverse(nodes);
+    return paths;
   };
 
   const selectAllVisible = () => {
@@ -475,6 +504,35 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
     const matchingNodes = getNodesByStatus(filteredAndSortedTree);
     setSelectedNodes(new Set(matchingNodes));
   };
+  
+  const selectFolderContents = (folderPath: string) => {
+    const getFolderFiles = (nodes: FileNode[], targetPath: string): string[] => {
+      for (const node of nodes) {
+        if (node.path === targetPath && node.type === 'folder' && node.children) {
+          const files: string[] = [];
+          const collectFiles = (children: FileNode[]) => {
+            children.forEach(child => {
+              if (child.type === 'file') {
+                files.push(child.path);
+              } else if (child.children) {
+                collectFiles(child.children);
+              }
+            });
+          };
+          collectFiles(node.children);
+          return files;
+        }
+        if (node.children) {
+          const result = getFolderFiles(node.children, targetPath);
+          if (result.length > 0) return result;
+        }
+      }
+      return [];
+    };
+    
+    const folderFiles = getFolderFiles(filteredAndSortedTree, folderPath);
+    setSelectedNodes(prev => new Set([...prev, ...folderFiles]));
+  };
 
   const addSelectedToContext = () => {
     // Legacy add to context removed - files are now automatically included via @mentions
@@ -519,43 +577,89 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
   // formatDate removed - not used in current UI
 
   const renderNode = (node: FileNode, depth: number = 0): React.ReactNode => {
-    const indentStyle = { paddingLeft: `${depth * 16 + 8}px` };
+    const indentStyle = { paddingLeft: `${depth * 20 + 8}px` };
     const isSelected = selectedNodes.has(node.path);
 
     if (node.type === 'folder') {
       return (
         <div key={node.id}>
           <div
-            className={`flex items-center py-1 px-2 hover:bg-muted cursor-pointer ${
-              isSelected ? 'bg-accent' : ''
+            className={`flex items-center py-1.5 px-2 hover:bg-muted transition-colors ${
+              isSelected ? 'bg-accent border-l-2 border-blue-500' : ''
             }`}
             style={indentStyle}
-            onClick={(e) => {
-              toggleFolderExpansion(node.path);
-              toggleNodeSelection(node.path, e.ctrlKey || e.metaKey);
-              if (onFolderSelect) {
-                const folder = app.vault.getAbstractFileByPath(node.path);
-                if (folder instanceof TFolder) {
-                  onFolderSelect(folder);
-                }
-              }
-            }}
           >
-            <span className="w-4 text-sm">
+            {/* Checkbox for selection */}
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={(e) => {
+                e.stopPropagation();
+                toggleNodeSelection(node.path, e.ctrlKey || e.metaKey, e.shiftKey);
+              }}
+              className="w-4 h-4 mr-2 rounded border-gray-300 focus:ring-2 focus:ring-blue-500"
+            />
+            
+            {/* Expand/collapse button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleFolderExpansion(node.path);
+              }}
+              className="w-6 h-6 mr-1 flex items-center justify-center hover:bg-gray-200 rounded transition-colors"
+            >
+              <span className="text-xs font-bold text-gray-600">
+                {node.isExpanded ? '−' : '+'}
+              </span>
+            </button>
+            
+            {/* Folder icon and name */}
+            <span 
+              className="w-5 text-base mr-2 cursor-pointer flex-shrink-0"
+              onClick={() => {
+                if (onFolderSelect) {
+                  const folder = app.vault.getAbstractFileByPath(node.path);
+                  if (folder instanceof TFolder) {
+                    onFolderSelect(folder);
+                  }
+                }
+              }}
+            >
               {node.isExpanded ? '📂' : '📁'}
             </span>
-            <span className="w-4 text-sm mr-1">
-              {node.isExpanded ? '▼' : '▶'}
+            <span 
+              className="flex-1 text-sm font-medium cursor-pointer select-none"
+              onClick={() => {
+                if (onFolderSelect) {
+                  const folder = app.vault.getAbstractFileByPath(node.path);
+                  if (folder instanceof TFolder) {
+                    onFolderSelect(folder);
+                  }
+                }
+              }}
+            >
+              {node.name}
             </span>
-            <span className="flex-1 text-sm font-medium">{node.name}</span>
             {node.children && (
-              <span className="text-xs text-muted-foreground">
-                ({node.children.length})
-              </span>
+              <>
+                <span className="text-xs text-muted-foreground px-1 py-0.5 bg-gray-100 rounded mr-1">
+                  {node.children.length}
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    selectFolderContents(node.path);
+                  }}
+                  className="text-xs px-1 py-0.5 text-blue-600 hover:bg-blue-100 rounded transition-colors"
+                  title="Select all files in this folder"
+                >
+                  ✓
+                </button>
+              </>
             )}
           </div>
           {node.isExpanded && node.children && (
-            <div>
+            <div className="border-l border-gray-200 ml-4">
               {node.children.map(child => renderNode(child, depth + 1))}
             </div>
           )}
@@ -566,33 +670,77 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
     return (
       <div
         key={node.id}
-        className={`flex items-center py-1 px-2 hover:bg-muted cursor-pointer text-sm ${
-          isSelected ? 'bg-accent' : ''
+        className={`flex items-center py-1.5 px-2 hover:bg-muted cursor-pointer text-sm transition-colors ${
+          isSelected ? 'bg-accent border-l-2 border-blue-500' : ''
         }`}
         style={indentStyle}
-        onClick={(e) => {
-          toggleNodeSelection(node.path, e.ctrlKey || e.metaKey);
-          if (onFileSelect) {
-            const file = app.vault.getAbstractFileByPath(node.path);
-            if (file instanceof TFile) {
-              onFileSelect(file);
-            }
-          }
-        }}
         title={node.errorMessage || node.path}
       >
-        <span className="w-4 text-sm">{getStatusIcon(node.status)}</span>
-        <span className="w-4 text-sm mr-1">{getFileTypeIcon(node.extension)}</span>
-        <span className="flex-1 truncate">{node.name}</span>
-        <span className="text-xs text-muted-foreground ml-2">
+        {/* Checkbox for selection */}
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={(e) => {
+            e.stopPropagation();
+            toggleNodeSelection(node.path, e.ctrlKey || e.metaKey, e.shiftKey);
+          }}
+          className="w-4 h-4 mr-2 rounded border-gray-300 focus:ring-2 focus:ring-blue-500"
+        />
+        
+        {/* File status and type icons */}
+        <span className="w-4 text-sm mr-1 flex-shrink-0">{getStatusIcon(node.status)}</span>
+        <span className="w-4 text-sm mr-2 flex-shrink-0">{getFileTypeIcon(node.extension)}</span>
+        
+        {/* File name - clickable to open */}
+        <span 
+          className="flex-1 truncate cursor-pointer select-none hover:text-blue-600"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onFileSelect) {
+              const file = app.vault.getAbstractFileByPath(node.path);
+              if (file instanceof TFile) {
+                onFileSelect(file);
+              }
+            }
+          }}
+        >
+          {node.name}
+        </span>
+        
+        {/* File size */}
+        <span className="text-xs text-muted-foreground ml-2 flex-shrink-0">
           {formatFileSize(node.size)}
         </span>
       </div>
     );
   };
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key) {
+          case 'a':
+            e.preventDefault();
+            selectAllVisible();
+            break;
+          case 'd':
+            e.preventDefault();
+            clearSelection();
+            break;
+        }
+      }
+      if (e.key === 'Escape') {
+        clearSelection();
+      }
+    };
+    
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   return (
-    <div className={`flex flex-col h-full ${className}`}>
+    <div className={`flex flex-col h-full ${className}`} tabIndex={0}>
       {/* Header with stats */}
       <div className="p-4 border-b border-border">
         <div className="flex items-center justify-between mb-3">
@@ -703,6 +851,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
           <button
             onClick={selectAllVisible}
             className="px-2 py-1 border border-border rounded hover:bg-muted"
+            title="Select all visible files (Ctrl+A)"
           >
             Select All
           </button>
@@ -734,6 +883,11 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
               {isWatcherActive ? '👀 Watching' : '👁️ Start Watch'}
             </button>
           )}
+        </div>
+        
+        {/* Help text */}
+        <div className="text-xs text-muted-foreground mt-2 px-1">
+          📝 Use checkboxes to select • Ctrl+click for multi-select • Shift+click for range • Ctrl+A to select all • Esc to clear
         </div>
       </div>
 

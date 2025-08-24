@@ -65,4 +65,4 @@ description: "Local Qwen3-14B model for general text generation"
 use_cases: ["local_inference", "privacy_focused", "general_text"]
 
 # Legacy workflow configurations removed - now handled by intelligence system
-# See configs/intelligence.yaml for the new configuration approach
+# See configs/routing.yaml for the intelligence configuration

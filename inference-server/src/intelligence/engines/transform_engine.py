@@ -23,7 +23,7 @@ class TransformEngine(BaseEngine):
     """Intelligently transform and edit content."""
     
     def __init__(self, llm_router):
-        super().__init__(llm_router, "TransformEngine")
+        super().__init__(llm_router, "transform")
     
     async def process(
         self,
