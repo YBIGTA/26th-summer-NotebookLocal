@@ -5,13 +5,13 @@
 import React from "react";
 
 interface IntentIndicatorProps {
-  intentType: string;
-  subCapability: string;
+  intent_type: string;
+  sub_capability: string;
   confidence: number;
   visible: boolean;
 }
 
-export function IntentIndicator({ intentType, subCapability, confidence, visible }: IntentIndicatorProps) {
+export function IntentIndicator({ intent_type, sub_capability, confidence, visible }: IntentIndicatorProps) {
   if (!visible) return null;
   
   // Map intent types to icons and colors
@@ -24,7 +24,7 @@ export function IntentIndicator({ intentType, subCapability, confidence, visible
     'error': { icon: '❌', color: '#6b7280', label: 'Error' }
   };
   
-  const info = intentInfo[intentType as keyof typeof intentInfo] || intentInfo.error;
+  const info = intentInfo[intent_type as keyof typeof intentInfo] || intentInfo.error;
   
   // Confidence indicator
   const confidenceColor = confidence >= 0.8 ? '#10b981' : confidence >= 0.6 ? '#f59e0b' : '#ef4444';
@@ -50,9 +50,9 @@ export function IntentIndicator({ intentType, subCapability, confidence, visible
         {info.label}
       </span>
       
-      {subCapability !== 'general' && (
+      {sub_capability !== 'general' && (
         <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
-          {subCapability.replace('_', ' ')}
+          {sub_capability.replace('_', ' ')}
         </span>
       )}
       
