@@ -14,7 +14,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { TFile, TFolder, TAbstractFile } from 'obsidian';
 import { VaultProcessingManager } from '../vault/VaultProcessingManager';
 import { VaultFileCache, VaultFileMetadata } from '../vault/VaultFileCache';
-import { RagContextManager } from '../context/RagContextManager';
+// Legacy RAG context import removed
 
 interface FileNode {
   id: string;
@@ -34,7 +34,6 @@ interface FileNode {
 interface FileManagerViewProps {
   onFileSelect?: (file: TFile) => void;
   onFolderSelect?: (folder: TFolder) => void;
-  onAddToContext?: (paths: string[]) => void;
   className?: string;
 }
 
@@ -44,7 +43,6 @@ type SortType = 'name' | 'modified' | 'size' | 'status';
 export const FileManagerView: React.FC<FileManagerViewProps> = ({
   onFileSelect,
   onFolderSelect,
-  onAddToContext,
   className = ""
 }) => {
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
@@ -287,8 +285,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
   };
 
   const addSelectedToContext = () => {
-    if (onAddToContext && selectedNodes.size > 0) {
-      onAddToContext(Array.from(selectedNodes));
+    // Legacy add to context removed - files are now automatically included via @mentions
     }
   };
 
@@ -497,7 +494,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
             >
               Queue
             </button>
-            {onAddToContext && (
+            {false && (
               <button
                 onClick={addSelectedToContext}
                 className="px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600"

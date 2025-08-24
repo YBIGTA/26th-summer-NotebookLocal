@@ -1,6 +1,9 @@
 // NotebookLocal Chat View - Enhanced chat interface with RAG context support
 import React, { useState, useEffect, useRef } from "react";
-import { ItemView, WorkspaceLeaf } from "obsidian";
+import { ItemView, WorkspaceLeaf, App } from "obsidian";
+
+// Global app reference for accessing Obsidian API
+declare const app: App;
 import { Root, createRoot } from "react-dom/client";
 import { ApiClient, ChatRequest } from "../api/ApiClient-clean";
 import { CHAT_VIEWTYPE } from "../constants-minimal";
@@ -8,8 +11,9 @@ import { getSettings } from "../settings/model-clean";
 import { EnhancedChatInput } from "./EnhancedChatInput";
 import { ContextPreviewPanel } from "./ContextPreviewPanel";
 import { FileManagerView } from "./FileManagerView";
-import { RagContextManager, RagContext } from "../context/RagContextManager";
-import { CommandParser, ParsedMessage } from "../context/CommandParser";
+import { IntentIndicator } from "./IntentIndicator";
+// Removed legacy imports - now using intelligence system
+import { IntelligenceController, IntelligenceResponse } from "../intelligence/IntelligenceController";
 
 interface Message {
   id: string;
@@ -31,41 +35,19 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<'chat' | 'files' | 'context'>('chat');
-  const [ragContext, setRagContext] = useState<RagContext | null>(null);
+  // Legacy RAG context removed
+  const [lastIntelligenceResponse, setLastIntelligenceResponse] = useState<IntelligenceResponse | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const ragContextManager = useRef(RagContextManager.getInstance());
-  const commandParser = useRef(new CommandParser());
+  // Legacy context managers removed
+  const intelligenceController = useRef(new IntelligenceController(apiClient));
 
-  // Check connection on mount and initialize RAG context
+  // Check connection on mount
   useEffect(() => {
     checkConnection();
-    initializeRagContext();
   }, []);
 
-  // Initialize RAG context
-  const initializeRagContext = async () => {
-    try {
-      const context = ragContextManager.current.getContext();
-      setRagContext(context);
-    } catch (error) {
-      console.error('Error initializing RAG context:', error);
-      // Set default context
-      setRagContext({
-        enabled: false,
-        scope: 'whole',
-        selectedFiles: new Set(),
-        selectedFolders: new Set(),
-        selectedTags: new Set(),
-        temporalFilters: {
-          includeRecent: false,
-          includeActive: false,
-          recentDays: 7
-        },
-        lastUpdated: new Date()
-      });
-    }
-  };
+  // Legacy RAG context initialization removed
 
   // Auto scroll to bottom when messages change or during streaming
   useEffect(() => {
@@ -82,76 +64,68 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
     }
   };
 
-  const handleMessageSubmit = async (message: string, parsedMessage: ParsedMessage) => {
+  const handleMessageSubmit = async (message: string) => {
     if (!message.trim() || isLoading || isStreaming) return;
 
-    const settings = getSettings();
+    // Always use intelligence system - it handles @mentions intelligently
+    await handleIntelligentMessage(message);
+  };
+
+  const handleIntelligentMessage = async (message: string) => {
+    // Add user message to chat
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      content: message,
+      sender: 'user',
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, userMessage]);
     
-    // Execute any slash commands first
-    if (parsedMessage.slashCommands.length > 0) {
-      for (const command of parsedMessage.slashCommands) {
-        try {
-          const result = await ragContextManager.current.executeSlashCommand(command);
-          
-          // Add command result as system message
-          const systemMessage: Message = {
-            id: (Date.now() + Math.random()).toString(),
-            content: `⚡ ${result}`,
-            sender: 'assistant',
-            timestamp: new Date(),
-          };
-          setMessages(prev => [...prev, systemMessage]);
-          
-          // Update RAG context if command affects it
-          if (['rag-toggle', 'rag-enable', 'rag-disable', 'rag-scope', 'rag-clear'].includes(command.command)) {
-            const updatedContext = await ragContextManager.current.getCurrentContext();
-            setRagContext(updatedContext);
-          }
-        } catch (error) {
-          console.error('Command execution error:', error);
-          const errorMessage: Message = {
-            id: (Date.now() + Math.random()).toString(),
-            content: `❌ Command error: ${error.message}`,
-            sender: 'assistant',
-            timestamp: new Date(),
-          };
-          setMessages(prev => [...prev, errorMessage]);
-        }
-      }
-    }
-
-    // Handle @ mentions by updating context
-    if (parsedMessage.atMentions.length > 0) {
-      try {
-        await ragContextManager.current.handleAtMentions(parsedMessage.atMentions);
-        const updatedContext = await ragContextManager.current.getCurrentContext();
-        setRagContext(updatedContext);
-        
-        const contextMessage: Message = {
-          id: (Date.now() + Math.random()).toString(),
-          content: `📋 Updated context with ${parsedMessage.atMentions.length} mentions`,
-          sender: 'assistant',
-          timestamp: new Date(),
-        };
-        setMessages(prev => [...prev, contextMessage]);
-      } catch (error) {
-        console.error('Context update error:', error);
-      }
-    }
-
-    // Send the cleaned message if there's actual content
-    if (parsedMessage.cleanMessage.trim()) {
-      const userMessage: Message = {
-        id: Date.now().toString(),
-        content: message, // Show original message with commands
-        sender: 'user',
+    // Get current note path
+    const currentNotePath = app.workspace.getActiveFile()?.path;
+    
+    try {
+      setIsLoading(true);
+      
+      // Process with intelligence controller
+      const intelligenceResponse = await intelligenceController.current.processMessage(
+        message,
+        currentNotePath
+      );
+      
+      // Create assistant message with intelligence response
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: intelligenceResponse.content,
+        sender: 'assistant',
+        timestamp: new Date(),
+        sources: intelligenceResponse.sources,
+      };
+      
+      setMessages(prev => [...prev, assistantMessage]);
+      
+      // Store intelligence response for UI display
+      setLastIntelligenceResponse(intelligenceResponse);
+      
+      // Show intent and confidence in console for debugging
+      console.log(`🎯 Intent: ${intelligenceResponse.intentType}/${intelligenceResponse.subCapability} (${intelligenceResponse.confidence.toFixed(2)})`);
+      
+    } catch (error) {
+      console.error('Intelligent message error:', error);
+      
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: `I had trouble understanding your request: ${error.message}. You can try using slash commands as a fallback.`,
+        sender: 'assistant',
         timestamp: new Date(),
       };
-
-      setMessages(prev => [...prev, userMessage]);
-      await sendChatMessage(parsedMessage.cleanMessage);
+      
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
     }
   };
+
 
   const sendChatMessage = async (messageContent: string) => {
     const settings = getSettings();
@@ -266,23 +240,11 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
     setMessages([]);
   };
 
-  const handleContextChange = async (newContext: RagContext) => {
-    try {
-      await ragContextManager.current.setContext(newContext);
-      setRagContext(newContext);
-    } catch (error) {
-      console.error('Error updating context:', error);
-    }
-  };
-
-  const handleSendMessage = async (message: string, currentRagContext: RagContext) => {
+  const handleSendMessage = async (message: string) => {
     if (!message.trim() || isLoading || isStreaming) return;
     
-    // Parse the message to get commands and clean text
-    const parsedMessage = commandParser.current.parseMessage(message);
-    
-    // Call the original handleMessageSubmit with the parsed message
-    await handleMessageSubmit(message, parsedMessage);
+    // Direct message processing with intelligence system
+    await handleMessageSubmit(message);
   };
 
   const handleFileSelect = (file: any) => {
@@ -291,20 +253,7 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
     leaf.openFile(file);
   };
 
-  const handleAddToContext = async (paths: string[]) => {
-    if (!ragContext) return;
-    
-    const updatedContext = { ...ragContext };
-    paths.forEach(path => {
-      if (path.endsWith('/')) {
-        updatedContext.selectedFolders.add(path);
-      } else {
-        updatedContext.selectedFiles.add(path);
-      }
-    });
-    
-    await handleContextChange(updatedContext);
-  };
+  // Legacy context management removed
 
   return (
     <div className="notebook-local-container" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -326,11 +275,9 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
             <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
               {isConnected ? 'Connected' : 'Disconnected'}
             </span>
-            {ragContext?.enabled && (
-              <span style={{ fontSize: '11px', padding: '2px 6px', backgroundColor: 'var(--color-green)', color: 'white', borderRadius: '4px' }}>
-                RAG
-              </span>
-            )}
+            <span style={{ fontSize: '11px', padding: '2px 6px', backgroundColor: 'var(--interactive-accent)', color: 'white', borderRadius: '4px' }}>
+              AI
+            </span>
           </div>
           
           <div style={{ display: 'flex', gap: '8px' }}>
@@ -422,10 +369,11 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
           }}>
             {isConnected ? (
               <div>
-                <div style={{ marginBottom: '8px', fontSize: '16px' }}>🚀</div>
-                <div>Ready to chat with your documents!</div>
-                <div style={{ fontSize: '12px', marginTop: '4px' }}>
-                  Upload documents using the command palette or start asking questions.
+                <div style={{ marginBottom: '8px', fontSize: '16px' }}>🧠</div>
+                <div>Your intelligent vault assistant is ready!</div>
+                <div style={{ fontSize: '12px', marginTop: '4px', lineHeight: '1.4' }}>
+                  Ask naturally: "What did I conclude about X?" • "Find my notes about Y" • "Make this clearer"<br/>
+                  Or use /commands and @mentions for precise control.
                 </div>
               </div>
             ) : (
@@ -534,27 +482,33 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
               <div ref={messagesEndRef} />
             </div>
 
+            {/* Intent Indicator */}
+            {lastIntelligenceResponse && (
+              <div style={{ padding: '8px 16px', borderTop: '1px solid var(--background-modifier-border)' }}>
+                <IntentIndicator
+                  intentType={lastIntelligenceResponse.intentType}
+                  subCapability={lastIntelligenceResponse.subCapability}
+                  confidence={lastIntelligenceResponse.confidence}
+                  visible={true}
+                />
+              </div>
+            )}
+
             {/* Enhanced Chat Input */}
             <div style={{ borderTop: '1px solid var(--background-modifier-border)' }}>
-              {ragContext && (
-                <EnhancedChatInput
-                  onSendMessage={handleSendMessage}
-                  onContextChange={handleContextChange}
-                  disabled={!isConnected || isLoading || isStreaming}
-                  placeholder={isConnected ? "Ask about your documents or use /help for commands..." : "Connect to server first"}
-                  ragContext={ragContext}
-                />
-              )}
+              <EnhancedChatInput
+                onSendMessage={handleSendMessage}
+                disabled={!isConnected || isLoading || isStreaming}
+                placeholder={isConnected ? "Ask naturally about your vault, or use @mentions for specific files..." : "Connect to server first"}
+              />
             </div>
           </div>
         )}
 
-        {currentView === 'context' && ragContext && (
-          <div style={{ height: '100%', overflow: 'auto' }}>
-            <ContextPreviewPanel
-              ragContext={ragContext}
-              onContextChange={handleContextChange}
-            />
+        {currentView === 'context' && (
+          <div style={{ height: '100%', overflow: 'auto', padding: '16px', color: 'var(--text-muted)' }}>
+            <div>Context is now managed automatically by the intelligence system.</div>
+            <div style={{ marginTop: '8px', fontSize: '12px' }}>Use @mentions to reference specific files or folders.</div>
           </div>
         )}
 
@@ -562,7 +516,6 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
           <div style={{ height: '100%', overflow: 'hidden' }}>
             <FileManagerView
               onFileSelect={handleFileSelect}
-              onAddToContext={handleAddToContext}
             />
           </div>
         )}

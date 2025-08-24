@@ -19,9 +19,9 @@ from src.main import LectureProcessor
 from src.llm.core.router import LLMRouter
 from src.llm.models.requests import ChatRequest, Message
 
-# Import vault and context route modules
+# Import route modules
 from .vault_routes import router as vault_router
-from .context_routes import router as context_router
+from .intelligence_routes import router as intelligence_router
 
 
 def extract_chunk_content(raw_chunk: str) -> str:
@@ -246,132 +246,7 @@ async def list_models():
 # Extended API for Obsidian Plugin Integration
 # ========================================
 
-def convert_obsidian_to_openai(obsidian_request: ObsidianChatRequest) -> ChatRequest:
-    """Convert Obsidian chat request to OpenAI format."""
-    messages = [
-        Message(role="user", content=obsidian_request.message)
-    ]
-    
-    return ChatRequest(
-        messages=messages,
-        stream=obsidian_request.stream,
-        temperature=0.7,
-        max_tokens=2048
-    )
-
-
-def add_rag_context(openai_request: ChatRequest, user_message: str) -> ChatRequest:
-    """Add RAG context from vector search to OpenAI request."""
-    try:
-        # Use the existing global processor that has properly initialized router
-        if not processor:
-            raise ValueError("Global processor not initialized")
-        
-        # Use the processor's existing qa_workflow
-        qa_workflow = processor.qa_workflow
-        
-        # Get context using the existing workflow
-        state = {"question": user_message}
-        state = qa_workflow._retrieve(state)
-        context = state.get("context", "")
-        
-        if context:
-            # Add system message with context
-            system_message = Message(
-                role="system", 
-                content=f"Context:\n{context}\n\nAnswer based on the provided context."
-            )
-            openai_request.messages.insert(0, system_message)
-        
-        return openai_request
-    except Exception as e:
-        print(f"Warning: Failed to add RAG context: {e}")
-        return openai_request
-
-
-def convert_openai_to_obsidian(openai_response: ChatResponse, chat_id: str) -> ObsidianChatResponse:
-    """Convert OpenAI response to Obsidian format."""
-    message_content = ""
-    if openai_response.choices and len(openai_response.choices) > 0:
-        message_content = openai_response.choices[0].message.content
-    
-    return ObsidianChatResponse(
-        message=message_content,
-        chat_id=chat_id,
-        timestamp=datetime.now(),
-        sources=[]  # TODO: Extract sources from context
-    )
-
-@router.post("/obsidian/chat", response_model=ObsidianChatResponse)
-async def obsidian_chat(request: ObsidianChatRequest):
-    """Chat endpoint for Obsidian plugin with context support."""
-    if not llm_router:
-        raise HTTPException(status_code=503, detail="LLM router not available")
-    
-    try:
-        # Generate chat ID if not provided
-        chat_id = request.chat_id or f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        
-        # 1. Convert Obsidian format to OpenAI format
-        openai_request = convert_obsidian_to_openai(request)
-        
-        # 2. Add RAG context from vector search
-        openai_request = add_rag_context(openai_request, request.message)
-        
-        # 3. Route to appropriate model via LLMRouter
-        openai_response = await llm_router.route(openai_request)
-        
-        # 4. Convert back to Obsidian format
-        return convert_openai_to_obsidian(openai_response, chat_id)
-        
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Chat failed: {str(exc)}") from exc
-
-
-@router.post("/obsidian/chat/stream")
-async def obsidian_chat_stream(request: ObsidianChatRequest):
-    """Streaming chat endpoint for real-time responses."""
-    if not llm_router:
-        raise HTTPException(status_code=503, detail="LLM router not available")
-    
-    if not request.stream:
-        # Fallback to regular chat
-        response = await obsidian_chat(request)
-        return response
-    
-    async def generate_stream():
-        try:
-            chat_id = request.chat_id or f"stream_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            
-            # 1. Convert Obsidian format to OpenAI format
-            openai_request = convert_obsidian_to_openai(request)
-            openai_request.stream = True  # Enable streaming
-            
-            # 2. Add RAG context from vector search
-            openai_request = add_rag_context(openai_request, request.message)
-            
-            # 3. Stream from LLM router
-            stream_generator = await llm_router.route(openai_request)
-            async for raw_chunk in stream_generator:
-                # Extract clean text content from OpenAI chunk format
-                clean_content = extract_chunk_content(raw_chunk)
-                if clean_content:  # Only send non-empty content
-                    data = {
-                        "content": clean_content,
-                        "chat_id": chat_id,
-                        "done": False
-                    }
-                    yield f"data: {json.dumps(data)}\n\n"
-            
-            # Send completion signal
-            final_data = {"content": "", "chat_id": chat_id, "done": True}
-            yield f"data: {json.dumps(final_data)}\n\n"
-                
-        except Exception as e:
-            error_data = {"error": str(e), "chat_id": request.chat_id or "error", "done": True}
-            yield f"data: {json.dumps(error_data)}\n\n"
-    
-    return StreamingResponse(generate_stream(), media_type="text/plain")
+# Legacy endpoints removed - now using intelligence system
 
 
 @router.post("/obsidian/search", response_model=List[SearchResult])
@@ -659,6 +534,6 @@ async def debug_db_stats():
             "traceback": traceback.format_exc()
         }
 
-# Include the vault and context route modules in the main router
+# Include route modules in the main router
 router.include_router(vault_router)
-router.include_router(context_router)
+router.include_router(intelligence_router)

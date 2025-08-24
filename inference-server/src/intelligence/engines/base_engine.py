@@ -1,0 +1,219 @@
+"""
+BaseEngine - Base class for all capability engines.
+
+Provides common functionality:
+- LLM interaction with proper routing
+- Response formatting and validation
+- Error handling and fallbacks
+- Performance tracking
+"""
+
+import logging
+from typing import Dict, List, Any, Optional
+from dataclasses import dataclass
+from datetime import datetime
+import time
+
+from ...llm.core.router import LLMRouter
+from ...llm.models.requests import ChatRequest, Message
+from ..context_engine import ContextPyramid
+from ..intent_detector import DetectedIntent
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class EngineResponse:
+    """Standard response format from capability engines."""
+    content: str
+    confidence: float
+    metadata: Dict[str, Any]
+    suggested_actions: List[str]
+    processing_time: float
+
+class BaseEngine:
+    """Base class for all capability engines."""
+    
+    def __init__(self, llm_router: LLMRouter, engine_name: str):
+        self.llm_router = llm_router
+        self.engine_name = engine_name
+        self.logger = logging.getLogger(f"{__name__}.{engine_name}")
+    
+    async def process(
+        self,
+        message: str,
+        intent: DetectedIntent,
+        context: ContextPyramid
+    ) -> EngineResponse:
+        """
+        Main processing method - must be implemented by subclasses.
+        
+        Args:
+            message: User's original message
+            intent: Detected intent with sub-capability
+            context: Built context pyramid with relevant vault content
+            
+        Returns:
+            EngineResponse with content and metadata
+        """
+        raise NotImplementedError("Subclasses must implement process method")
+    
+    async def _query_llm(
+        self,
+        system_prompt: str,
+        user_message: str,
+        model_preference: str = "gpt-4o-mini",
+        temperature: float = 0.3,
+        max_tokens: int = 1000
+    ) -> str:
+        """Query LLM with proper error handling."""
+        
+        start_time = time.time()
+        
+        try:
+            request = ChatRequest(
+                messages=[
+                    Message(role="system", content=system_prompt),
+                    Message(role="user", content=user_message)
+                ],
+                model=model_preference,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            
+            self.logger.info(f"📤 Querying LLM: {model_preference} (temp={temperature})")
+            
+            response = await self.llm_router.route(request)
+            
+            if response.choices and len(response.choices) > 0:
+                content = response.choices[0].message.content.strip()
+                elapsed = time.time() - start_time
+                self.logger.info(f"📥 LLM response received: {len(content)} chars in {elapsed:.2f}s")
+                return content
+            else:
+                raise Exception("No response from LLM")
+                
+        except Exception as e:
+            elapsed = time.time() - start_time
+            self.logger.error(f"❌ LLM query failed after {elapsed:.2f}s: {e}")
+            raise
+    
+    def _estimate_confidence(
+        self,
+        context_pyramid: ContextPyramid,
+        intent: DetectedIntent,
+        response_length: int
+    ) -> float:
+        """Estimate confidence in the response based on context quality."""
+        
+        base_confidence = intent.confidence
+        
+        # Boost confidence based on context quality
+        context_boost = 0.0
+        
+        # More context items generally increase confidence
+        if len(context_pyramid.items) >= 3:
+            context_boost += 0.1
+        
+        # Current note in context is good
+        current_items = [item for item in context_pyramid.items if item.context_type == 'current']
+        if current_items:
+            context_boost += 0.1
+        
+        # High-relevance items boost confidence
+        high_relevance_items = [item for item in context_pyramid.items if item.relevance_score >= 0.7]
+        if len(high_relevance_items) >= 2:
+            context_boost += 0.1
+        
+        # Penalize if context was truncated
+        if context_pyramid.truncated:
+            context_boost -= 0.1
+        
+        # Penalize very short responses (might indicate insufficient context)
+        if response_length < 100:
+            context_boost -= 0.1
+        
+        # Final confidence capped at 0.95
+        final_confidence = min(0.95, base_confidence + context_boost)
+        
+        self.logger.debug(f"📊 Confidence calculation: base={base_confidence:.2f}, boost={context_boost:.2f}, final={final_confidence:.2f}")
+        
+        return max(0.1, final_confidence)  # Minimum 0.1 confidence
+    
+    def _extract_source_citations(self, response_text: str, context_pyramid: ContextPyramid) -> List[str]:
+        """Extract and format source citations from response."""
+        sources = self.context_engine.get_context_sources(context_pyramid)
+        
+        # Filter sources to only those actually referenced in response
+        referenced_sources = []
+        
+        for source in sources:
+            # Extract file name from source label
+            import re
+            file_match = re.search(r'\[([^\]]+)\]', source)
+            if file_match:
+                file_name = file_match.group(1)
+                # Check if this file is referenced in the response
+                if file_name.lower() in response_text.lower():
+                    referenced_sources.append(source)
+        
+        # If no specific references found, include top sources
+        if not referenced_sources and len(sources) > 0:
+            referenced_sources = sources[:3]  # Top 3 sources
+        
+        return referenced_sources
+    
+    def _generate_suggested_actions(
+        self,
+        intent: DetectedIntent,
+        context_pyramid: ContextPyramid,
+        response: str
+    ) -> List[str]:
+        """Generate contextual suggestions for follow-up actions."""
+        
+        suggestions = []
+        
+        # Intent-specific suggestions
+        if intent.intent_type == IntentType.UNDERSTAND:
+            suggestions.extend([
+                "Ask a follow-up question about this topic",
+                "Find related notes to explore further",
+                "Summarize key insights from this information"
+            ])
+            
+        elif intent.intent_type == IntentType.NAVIGATE:
+            suggestions.extend([
+                "Read the most relevant note found",
+                "Explore connections between these notes",
+                "Search for a more specific topic"
+            ])
+            
+        elif intent.intent_type == IntentType.TRANSFORM:
+            suggestions.extend([
+                "Preview the changes before applying",
+                "Transform a different section",
+                "Save this version as a new note"
+            ])
+            
+        elif intent.intent_type == IntentType.SYNTHESIZE:
+            suggestions.extend([
+                "Dive deeper into one of the patterns found",
+                "Create a summary note from these insights",
+                "Compare with patterns from a different time period"
+            ])
+            
+        elif intent.intent_type == IntentType.MAINTAIN:
+            suggestions.extend([
+                "Apply the suggested fixes",
+                "Schedule regular vault health checks",
+                "Focus on one type of issue at a time"
+            ])
+        
+        # Context-specific suggestions
+        if context_pyramid.truncated:
+            suggestions.append("Try a more specific query for better context")
+        
+        if len(context_pyramid.items) < 2:
+            suggestions.append("Process more files to improve context")
+        
+        # Limit to top 3 most relevant suggestions
+        return suggestions[:3]

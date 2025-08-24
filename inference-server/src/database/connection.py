@@ -77,6 +77,11 @@ def _create_additional_indexes():
         logger.warning(f"Some indexes may already exist: {e}")
 
 
+def get_db_connection():
+    """Get raw database connection for direct SQL queries."""
+    return engine.raw_connection()
+
+
 def test_connection():
     """Test database connection."""
     try:
