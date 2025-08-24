@@ -108,7 +108,7 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
       setLastIntelligenceResponse(intelligenceResponse);
       
       // Show intent and confidence in console for debugging
-      console.log(`🎯 Intent: ${intelligenceResponse.intentType}/${intelligenceResponse.subCapability} (${intelligenceResponse.confidence.toFixed(2)})`);
+      console.log(`🎯 Intent: ${intelligenceResponse.intent_type}/${intelligenceResponse.sub_capability} (${intelligenceResponse.confidence.toFixed(2)})`);
       
     } catch (error) {
       console.error('Intelligent message error:', error);
@@ -486,8 +486,8 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
             {lastIntelligenceResponse && (
               <div style={{ padding: '8px 16px', borderTop: '1px solid var(--background-modifier-border)' }}>
                 <IntentIndicator
-                  intentType={lastIntelligenceResponse.intentType}
-                  subCapability={lastIntelligenceResponse.subCapability}
+                  intent_type={lastIntelligenceResponse.intent_type}
+                  sub_capability={lastIntelligenceResponse.sub_capability}
                   confidence={lastIntelligenceResponse.confidence}
                   visible={true}
                 />

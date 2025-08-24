@@ -9,36 +9,36 @@ import { ApiClient } from "../api/ApiClient-clean";
 
 export interface IntelligenceRequest {
   message: string;
-  currentNotePath?: string;
-  conversationHistory?: string[];
-  sessionId?: string;
-  maxTokens?: number;
-  mentionedFiles?: string[];
-  mentionedFolders?: string[];
+  current_note_path?: string;
+  conversation_history?: string[];
+  session_id?: string;
+  max_tokens?: number;
+  mentioned_files?: string[];
+  mentioned_folders?: string[];
 }
 
 export interface IntelligenceResponse {
   content: string;
   sources: string[];
   confidence: number;
-  intentType: string;
-  subCapability: string;
+  intent_type: string;
+  sub_capability: string;
   metadata: Record<string, any>;
-  suggestedActions: string[];
-  sessionId?: string;
+  suggested_actions: string[];
+  session_id?: string;
 }
 
 export interface IntentHint {
-  intentType: string;
+  intent_type: string;
   confidence: number;
-  subCapability: string;
+  sub_capability: string;
   reasoning: string;
 }
 
 export interface CapabilityInfo {
   capabilities: Record<string, any>;
-  totalEngines: number;
-  contextEngine: Record<string, any>;
+  total_engines: number;
+  context_engine: Record<string, any>;
 }
 
 export class IntelligenceController {
@@ -142,9 +142,9 @@ export class IntelligenceController {
       const intelligenceResponse: IntelligenceResponse = await response.json();
       
       // Add response to conversation history for context
-      this.conversationHistory.push(`[Assistant ${intelligenceResponse.intentType}]: ${intelligenceResponse.content.substring(0, 100)}...`);
-      
-      console.log(`✅ Intelligence response: ${intelligenceResponse.intentType} (confidence: ${intelligenceResponse.confidence.toFixed(2)})`);
+      this.conversationHistory.push(`[Assistant ${intelligenceResponse.intent_type}]: ${intelligenceResponse.content.substring(0, 100)}...`);
+
+      console.log(`✅ Intelligence response: ${intelligenceResponse.intent_type} (confidence: ${intelligenceResponse.confidence.toFixed(2)})`);
       
       return intelligenceResponse;
       
@@ -156,11 +156,11 @@ export class IntelligenceController {
         content: `I encountered an error processing your request: ${error.message}`,
         sources: [],
         confidence: 0.0,
-        intentType: 'error',
-        subCapability: 'error',
+        intent_type: 'error',
+        sub_capability: 'error',
         metadata: { error: error.message },
-        suggestedActions: ['Try rephrasing your question', 'Check if server is running'],
-        sessionId: this.sessionId
+        suggested_actions: ['Try rephrasing your question', 'Check if server is running'],
+        session_id: this.sessionId
       };
     }
   }
