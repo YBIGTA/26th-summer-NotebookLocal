@@ -45,6 +45,47 @@ export interface DocumentInfo {
   chunks: number;
 }
 
+// Intelligence interfaces
+export interface IntelligenceRequest {
+  message: string;
+  current_note_path?: string;
+  conversation_history?: string[];
+  session_id?: string;
+  max_tokens?: number;
+  mentioned_files?: string[];
+  mentioned_folders?: string[];
+}
+
+export interface IntelligenceResponse {
+  content: string;
+  sources: string[];
+  confidence: number;
+  intent_type: string;
+  sub_capability: string;
+  metadata: Record<string, any>;
+  suggested_actions: string[];
+  session_id?: string;
+}
+
+export interface IntentHint {
+  intent_type: string;
+  confidence: number;
+  sub_capability: string;
+  reasoning: string;
+}
+
+export interface CapabilityInfo {
+  capabilities: Record<string, any>;
+  total_engines: number;
+  context_engine: Record<string, any>;
+}
+
+export interface ContextBuildRequest {
+  query: string;
+  current_note_path?: string;
+  max_tokens?: number;
+}
+
 // Vault management interfaces
 export interface VaultFileResponse {
   file_id: string;
@@ -87,19 +128,23 @@ export class ApiClient {
   private timeout: number;
 
   constructor(settings: any) {
-    this.baseUrl = settings.serverUrl || 'http://localhost:8000';
+    this.baseUrl = settings.serverUrl || "http://localhost:8000";
     this.timeout = settings.timeout || 30000;
   }
 
   updateSettings(settings: any) {
-    this.baseUrl = settings.serverUrl || 'http://localhost:8000';
+    this.baseUrl = settings.serverUrl || "http://localhost:8000";
     this.timeout = settings.timeout || 30000;
+  }
+
+  getBaseUrl(): string {
+    return this.baseUrl;
   }
 
   // Health check
   async healthCheck(): Promise<HealthResponse> {
     const response = await fetch(`${this.baseUrl}/api/v1/health`, {
-      method: 'GET',
+      method: "GET",
       signal: AbortSignal.timeout(this.timeout),
     });
 
@@ -113,10 +158,10 @@ export class ApiClient {
   // Upload document
   async uploadDocument(file: File): Promise<UploadResponse> {
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append("file", file);
 
     const response = await fetch(`${this.baseUrl}/api/v1/process`, {
-      method: 'POST',
+      method: "POST",
       body: formData,
       signal: AbortSignal.timeout(this.timeout),
     });
@@ -131,9 +176,9 @@ export class ApiClient {
   // Chat with documents
   async chat(request: ChatRequest): Promise<ChatResponse> {
     const response = await fetch(`${this.baseUrl}/api/v1/obsidian/chat`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(request),
       signal: AbortSignal.timeout(this.timeout),
@@ -147,15 +192,20 @@ export class ApiClient {
   }
 
   // Streaming chat
-  async *chatStream(request: ChatRequest): AsyncGenerator<string, void, unknown> {
-    const response = await fetch(`${this.baseUrl}/api/v1/obsidian/chat/stream`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+  async *chatStream(
+    request: ChatRequest,
+  ): AsyncGenerator<string, void, unknown> {
+    const response = await fetch(
+      `${this.baseUrl}/api/v1/obsidian/chat/stream`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ...request, stream: true }),
+        signal: AbortSignal.timeout(this.timeout),
       },
-      body: JSON.stringify({ ...request, stream: true }),
-      signal: AbortSignal.timeout(this.timeout),
-    });
+    );
 
     if (!response.ok) {
       throw new Error(`Streaming chat failed: ${response.status}`);
@@ -163,11 +213,11 @@ export class ApiClient {
 
     const reader = response.body?.getReader();
     if (!reader) {
-      throw new Error('No response body');
+      throw new Error("No response body");
     }
 
     const decoder = new TextDecoder();
-    let buffer = '';
+    let buffer = "";
 
     try {
       while (true) {
@@ -175,14 +225,14 @@ export class ApiClient {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
+          if (line.startsWith("data: ")) {
             const data = line.slice(6);
-            if (data === '[DONE]') return;
-            
+            if (data === "[DONE]") return;
+
             try {
               const parsed = JSON.parse(data);
               // console.log('Streaming data received:', parsed); // DEBUG
@@ -204,12 +254,88 @@ export class ApiClient {
     }
   }
 
+  // Intelligence endpoints
+  async intelligenceChat(
+    request: IntelligenceRequest,
+  ): Promise<IntelligenceResponse> {
+    const response = await fetch(`${this.baseUrl}/api/v1/intelligence/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Intelligence chat failed: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  async detectIntent(request: IntelligenceRequest): Promise<IntentHint> {
+    const response = await fetch(
+      `${this.baseUrl}/api/v1/intelligence/intent/detect`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(5000),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Intent detection failed: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  async getIntelligenceCapabilities(): Promise<CapabilityInfo> {
+    const response = await fetch(
+      `${this.baseUrl}/api/v1/intelligence/capabilities`,
+      {
+        method: "GET",
+        signal: AbortSignal.timeout(10000),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to get capabilities: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  async buildContext(request: ContextBuildRequest): Promise<any> {
+    const response = await fetch(
+      `${this.baseUrl}/api/v1/intelligence/context/build`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(15000),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(`Context build failed: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
   // Search documents
   async search(request: SearchRequest): Promise<SearchResult[]> {
     const response = await fetch(`${this.baseUrl}/api/v1/obsidian/search`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(request),
       signal: AbortSignal.timeout(this.timeout),
@@ -225,7 +351,7 @@ export class ApiClient {
   // List documents
   async getDocuments(): Promise<DocumentInfo[]> {
     const response = await fetch(`${this.baseUrl}/api/v1/obsidian/documents`, {
-      method: 'GET',
+      method: "GET",
       signal: AbortSignal.timeout(this.timeout),
     });
 
@@ -238,10 +364,13 @@ export class ApiClient {
 
   // Delete document
   async deleteDocument(documentId: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/api/v1/obsidian/documents/${documentId}`, {
-      method: 'DELETE',
-      signal: AbortSignal.timeout(this.timeout),
-    });
+    const response = await fetch(
+      `${this.baseUrl}/api/v1/obsidian/documents/${documentId}`,
+      {
+        method: "DELETE",
+        signal: AbortSignal.timeout(this.timeout),
+      },
+    );
 
     if (!response.ok) {
       throw new Error(`Failed to delete document: ${response.status}`);
@@ -257,18 +386,21 @@ export class ApiClient {
     status?: string,
     fileType?: string,
     limit: number = 100,
-    offset: number = 0
+    offset: number = 0,
   ): Promise<VaultFileResponse[]> {
     const params = new URLSearchParams();
-    if (status) params.append('status', status);
-    if (fileType) params.append('file_type', fileType);
-    params.append('limit', limit.toString());
-    params.append('offset', offset.toString());
+    if (status) params.append("status", status);
+    if (fileType) params.append("file_type", fileType);
+    params.append("limit", limit.toString());
+    params.append("offset", offset.toString());
 
-    const response = await fetch(`${this.baseUrl}/api/v1/vault/files?${params}`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(this.timeout),
-    });
+    const response = await fetch(
+      `${this.baseUrl}/api/v1/vault/files?${params}`,
+      {
+        method: "GET",
+        signal: AbortSignal.timeout(this.timeout),
+      },
+    );
 
     if (!response.ok) {
       throw new Error(`Failed to get vault files: ${response.status}`);
@@ -280,9 +412,9 @@ export class ApiClient {
   // Scan vault for changes
   async scanVault(request: VaultScanRequest): Promise<any> {
     const response = await fetch(`${this.baseUrl}/api/v1/vault/scan`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(request),
       signal: AbortSignal.timeout(this.timeout),
@@ -298,9 +430,9 @@ export class ApiClient {
   // Process vault files
   async processVaultFiles(request: VaultProcessRequest): Promise<any> {
     const response = await fetch(`${this.baseUrl}/api/v1/vault/process`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(request),
       signal: AbortSignal.timeout(this.timeout),
@@ -315,10 +447,13 @@ export class ApiClient {
 
   // Remove file from processing queue
   async removeFromQueue(fileId: string): Promise<any> {
-    const response = await fetch(`${this.baseUrl}/api/v1/vault/files/${fileId}`, {
-      method: 'DELETE',
-      signal: AbortSignal.timeout(this.timeout),
-    });
+    const response = await fetch(
+      `${this.baseUrl}/api/v1/vault/files/${fileId}`,
+      {
+        method: "DELETE",
+        signal: AbortSignal.timeout(this.timeout),
+      },
+    );
 
     if (!response.ok) {
       throw new Error(`Failed to remove from queue: ${response.status}`);
@@ -330,7 +465,7 @@ export class ApiClient {
   // Get vault status
   async getVaultStatus(): Promise<VaultStatusResponse> {
     const response = await fetch(`${this.baseUrl}/api/v1/vault/status`, {
-      method: 'GET',
+      method: "GET",
       signal: AbortSignal.timeout(this.timeout),
     });
 
