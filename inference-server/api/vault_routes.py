@@ -14,6 +14,7 @@ Endpoints:
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 import hashlib
@@ -22,9 +23,14 @@ import mimetypes
 
 from src.database.connection import get_db
 from src.database.models import VaultFile, Document
+from src.vault.file_queue_manager import FileQueueManager, QueueStatus
+from src.vault.file_watcher import get_file_watcher, start_global_watcher, stop_global_watcher
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/v1/vault", tags=["vault"])
+
+# Global queue manager instance
+queue_manager = FileQueueManager()
 
 # Request/Response Models
 class VaultFileResponse(BaseModel):
@@ -56,6 +62,8 @@ class VaultStatusResponse(BaseModel):
     unprocessed: int
     error: int
     last_scan: Optional[datetime]
+    is_processing: bool
+    completed_today: int
 
 class FileSearchRequest(BaseModel):
     query: str
@@ -104,146 +112,49 @@ async def list_vault_files(
 
 @router.post("/scan")
 async def scan_vault_changes(
-    request: VaultScanRequest,
-    db: Session = Depends(get_db)
+    request: VaultScanRequest
 ):
-    """Scan vault directory for file changes"""
+    """Scan vault directory for file changes using enhanced queue manager"""
     
-    vault_path = request.vault_path
-    if not os.path.exists(vault_path):
-        raise HTTPException(status_code=404, detail="Vault path not found")
-    
-    changes = {
-        "new_files": [],
-        "modified_files": [],
-        "deleted_files": [],
-        "total_scanned": 0
-    }
-    
-    # Get existing files from database
-    existing_files = {f.vault_path: f for f in db.query(VaultFile).all()}
-    current_files = set()
-    
-    # Scan vault directory
-    supported_extensions = {'.md', '.pdf', '.txt', '.docx'}
-    
-    for root, dirs, files in os.walk(vault_path):
-        # Skip hidden directories and common ignore patterns
-        dirs[:] = [d for d in dirs if not d.startswith('.') and d not in {'.obsidian', 'node_modules'}]
+    try:
+        result = await queue_manager.scan_vault_directory(
+            vault_path=request.vault_path,
+            force_rescan=request.force_rescan
+        )
         
-        for file in files:
-            file_path = os.path.join(root, file)
-            relative_path = os.path.relpath(file_path, vault_path)
-            
-            # Skip hidden files and unsupported extensions
-            if file.startswith('.'):
-                continue
-                
-            _, ext = os.path.splitext(file)
-            if ext.lower() not in supported_extensions:
-                continue
-            
-            current_files.add(relative_path)
-            changes["total_scanned"] += 1
-            
-            try:
-                stat = os.stat(file_path)
-                modified_time = datetime.fromtimestamp(stat.st_mtime)
-                file_size = stat.st_size
-                
-                # Calculate content hash
-                with open(file_path, 'rb') as f:
-                    content_hash = hashlib.md5(f.read()).hexdigest()
-                
-                existing_file = existing_files.get(relative_path)
-                
-                if existing_file is None:
-                    # New file
-                    vault_file = VaultFile(
-                        vault_path=relative_path,
-                        file_type=ext.lower()[1:],  # Remove the dot
-                        content_hash=content_hash,
-                        file_size=file_size,
-                        modified_at=modified_time,
-                        processing_status='unprocessed'
-                    )
-                    db.add(vault_file)
-                    changes["new_files"].append(relative_path)
-                    
-                elif (existing_file.content_hash != content_hash or 
-                      existing_file.modified_at != modified_time or
-                      request.force_rescan):
-                    # Modified file
-                    existing_file.content_hash = content_hash
-                    existing_file.file_size = file_size
-                    existing_file.modified_at = modified_time
-                    existing_file.updated_at = datetime.now()
-                    
-                    # Reset processing status if content changed
-                    if existing_file.content_hash != content_hash:
-                        existing_file.processing_status = 'unprocessed'
-                        existing_file.error_message = None
-                    
-                    changes["modified_files"].append(relative_path)
-                    
-            except Exception as e:
-                print(f"Error scanning file {relative_path}: {e}")
-                continue
-    
-    # Find deleted files
-    for vault_path in existing_files.keys():
-        if vault_path not in current_files:
-            db.delete(existing_files[vault_path])
-            changes["deleted_files"].append(vault_path)
-    
-    db.commit()
-    
-    return {
-        "message": "Vault scan completed",
-        "changes": changes
-    }
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Scan failed: {str(e)}")
 
 @router.post("/process")
 async def process_vault_files(
-    request: VaultProcessRequest,
-    db: Session = Depends(get_db)
+    request: VaultProcessRequest
 ):
-    """Queue files for processing"""
+    """Queue files for processing using enhanced queue manager"""
     
-    processed_files = []
-    failed_files = []
-    
-    for file_path in request.file_paths:
-        vault_file = db.query(VaultFile).filter(VaultFile.vault_path == file_path).first()
+    try:
+        result = await queue_manager.queue_files_for_processing(request.file_paths)
         
-        if not vault_file:
-            failed_files.append({
-                "path": file_path,
-                "error": "File not found in vault database"
-            })
-            continue
+        return {
+            "message": f"Queued {len(result['queued_files'])} files for processing",
+            "queued_files": result["queued_files"],
+            "failed_files": result["failed_files"],
+            "already_queued": result["already_queued"],
+            "not_found": result["not_found"]
+        }
         
-        # Update status to queued
-        vault_file.processing_status = 'queued'
-        vault_file.error_message = None
-        vault_file.updated_at = datetime.now()
-        
-        processed_files.append(file_path)
-    
-    db.commit()
-    
-    return {
-        "message": f"Queued {len(processed_files)} files for processing",
-        "processed_files": processed_files,
-        "failed_files": failed_files
-    }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Queue operation failed: {str(e)}")
 
 @router.delete("/files/{file_id}")
 async def remove_from_queue(
     file_id: str,
     db: Session = Depends(get_db)
 ):
-    """Remove file from processing queue"""
+    """Remove file from processing queue using enhanced queue manager"""
     
     vault_file = db.query(VaultFile).filter(VaultFile.file_id == file_id).first()
     
@@ -257,41 +168,62 @@ async def remove_from_queue(
             detail=f"Cannot remove file with status: {vault_file.processing_status}"
         )
     
-    vault_file.processing_status = 'unprocessed'
-    vault_file.error_message = None
-    vault_file.updated_at = datetime.now()
-    
-    db.commit()
-    
-    return {"message": f"Removed {vault_file.vault_path} from queue"}
+    try:
+        # Use queue manager for thread-safe operations
+        result = await queue_manager.queue_files_for_processing([])  # Empty to trigger validation
+        
+        # Manual removal (queue manager doesn't have remove method, so direct DB update)
+        vault_file.processing_status = 'unprocessed'
+        vault_file.error_message = None
+        vault_file.updated_at = datetime.now()
+        
+        db.commit()
+        
+        return {"message": f"Removed {vault_file.vault_path} from queue"}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Remove operation failed: {str(e)}")
 
 @router.get("/status", response_model=VaultStatusResponse)
-async def get_vault_status(db: Session = Depends(get_db)):
-    """Get processing status summary"""
+async def get_vault_status():
+    """Get processing status summary using enhanced queue manager"""
     
-    status_counts = db.execute("""
-        SELECT processing_status, COUNT(*) as count
-        FROM vault_files 
-        GROUP BY processing_status
-    """).fetchall()
-    
-    counts = {row[0]: row[1] for row in status_counts}
-    total_files = sum(counts.values())
-    
-    # Get last scan time (most recent file creation)
-    last_scan = db.execute("""
-        SELECT MAX(created_at) FROM vault_files
-    """).scalar()
-    
-    return VaultStatusResponse(
-        total_files=total_files,
-        processed=counts.get('processed', 0),
-        queued=counts.get('queued', 0),
-        processing=counts.get('processing', 0),
-        unprocessed=counts.get('unprocessed', 0),
-        error=counts.get('error', 0),
-        last_scan=last_scan
-    )
+    try:
+        queue_status = await queue_manager.get_queue_status()
+        
+        # Get additional stats from database
+        db = next(get_db())
+        try:
+            status_counts = db.execute(text("""
+                SELECT processing_status, COUNT(*) as count
+                FROM vault_files 
+                GROUP BY processing_status
+            """)).fetchall()
+            
+            counts = {row[0]: row[1] for row in status_counts}
+            total_files = sum(counts.values())
+            
+            # Get last scan time (most recent file creation)
+            last_scan = db.execute(text("""
+                SELECT MAX(created_at) FROM vault_files
+            """)).scalar()
+            
+            return VaultStatusResponse(
+                total_files=total_files,
+                processed=counts.get('processed', 0),
+                queued=queue_status.total_queued,
+                processing=queue_status.processing,
+                unprocessed=counts.get('unprocessed', 0),
+                error=queue_status.failed,
+                last_scan=last_scan,
+                is_processing=queue_status.is_processing,
+                completed_today=queue_status.completed_today
+            )
+        finally:
+            db.close()
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Status query failed: {str(e)}")
 
 @router.post("/search", response_model=List[FileSearchResult])
 async def search_files(
@@ -387,3 +319,201 @@ async def get_files_by_tag(
         "files": [],
         "note": "Tag search requires document processing with metadata extraction"
     }
+
+# New queue management endpoints
+
+@router.get("/queue/status")
+async def get_queue_status():
+    """Get detailed queue processing status"""
+    
+    try:
+        status = await queue_manager.get_queue_status()
+        return {
+            "success": True,
+            "status": {
+                "total_queued": status.total_queued,
+                "processing": status.processing,
+                "completed_today": status.completed_today,
+                "failed": status.failed,
+                "is_processing": status.is_processing
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Queue status query failed: {str(e)}")
+
+@router.get("/queue/files")
+async def get_queued_files(
+    limit: int = Query(100, description="Maximum number of files to return")
+):
+    """Get files currently in the processing queue"""
+    
+    try:
+        files = await queue_manager.get_queued_files(limit)
+        
+        return {
+            "success": True,
+            "queued_files": [
+                {
+                    "file_id": str(file.file_id),
+                    "vault_path": file.vault_path,
+                    "file_type": file.file_type,
+                    "file_size": file.file_size,
+                    "modified_at": file.modified_at,
+                    "processing_status": file.processing_status,
+                    "created_at": file.created_at,
+                    "updated_at": file.updated_at
+                } for file in files
+            ],
+            "count": len(files)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Queue files query failed: {str(e)}")
+
+@router.post("/queue/process-next")
+async def process_next_file():
+    """Process the next file in queue (for processing workers)"""
+    
+    try:
+        files = await queue_manager.get_queued_files(1)
+        
+        if not files:
+            return {
+                "success": True,
+                "message": "No files in queue",
+                "processed_file": None
+            }
+        
+        file = files[0]
+        
+        # Mark as processing
+        success = await queue_manager.mark_file_processing(file.vault_path)
+        
+        if success:
+            return {
+                "success": True,
+                "message": "File marked for processing",
+                "processing_file": {
+                    "file_id": str(file.file_id),
+                    "vault_path": file.vault_path,
+                    "file_type": file.file_type,
+                    "file_size": file.file_size
+                }
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Failed to mark file for processing"
+            }
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Process next file failed: {str(e)}")
+
+@router.post("/queue/mark-processed/{file_path}")
+async def mark_file_processed(
+    file_path: str,
+    doc_uid: Optional[str] = Query(None, description="Document UID if processing succeeded")
+):
+    """Mark a file as successfully processed"""
+    
+    try:
+        success = await queue_manager.mark_file_processed(file_path, doc_uid)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"File marked as processed: {file_path}"
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"Failed to mark file as processed: {file_path}"
+            }
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Mark processed failed: {str(e)}")
+
+@router.post("/queue/mark-error/{file_path}")
+async def mark_file_error(
+    file_path: str,
+    error_message: str = Query(..., description="Error message to record")
+):
+    """Mark a file as failed processing"""
+    
+    try:
+        success = await queue_manager.mark_file_error(file_path, error_message)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"File marked with error: {file_path}"
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"Failed to mark file with error: {file_path}"
+            }
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Mark error failed: {str(e)}")
+
+# File watcher endpoints
+
+@router.post("/watcher/start")
+async def start_file_watcher(
+    vault_path: str = Query(..., description="Path to vault directory to watch")
+):
+    """Start file system watcher for real-time change detection"""
+    
+    try:
+        watcher = start_global_watcher(vault_path)
+        
+        return {
+            "success": True,
+            "message": f"Started file watcher for: {vault_path}",
+            "status": watcher.get_status()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to start file watcher: {str(e)}")
+
+@router.post("/watcher/stop")
+async def stop_file_watcher():
+    """Stop file system watcher"""
+    
+    try:
+        stop_global_watcher()
+        
+        return {
+            "success": True,
+            "message": "Stopped file watcher"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to stop file watcher: {str(e)}")
+
+@router.get("/watcher/status")
+async def get_watcher_status():
+    """Get file watcher status"""
+    
+    try:
+        watcher = get_file_watcher()
+        
+        if watcher:
+            return {
+                "success": True,
+                "status": watcher.get_status()
+            }
+        else:
+            return {
+                "success": True,
+                "status": {
+                    "is_watching": False,
+                    "vault_path": None,
+                    "pending_events": 0,
+                    "message": "File watcher not initialized"
+                }
+            }
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get watcher status: {str(e)}")

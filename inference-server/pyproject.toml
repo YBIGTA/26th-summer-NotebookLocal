@@ -38,6 +38,9 @@ dependencies = [
     "pymupdf",
     "Pillow",
     
+    # File system monitoring
+    "watchdog>=3.0.0",
+    
     # LLM dependencies
     "openai>=1.0.0",
     "anthropic>=0.7.0",

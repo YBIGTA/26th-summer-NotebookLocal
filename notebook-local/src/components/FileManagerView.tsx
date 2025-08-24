@@ -14,6 +14,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { TFile, TFolder, TAbstractFile, App } from 'obsidian';
 import { VaultProcessingManager } from '../vault/VaultProcessingManager';
 import { VaultFileCache, VaultFileMetadata } from '../vault/VaultFileCache';
+import { ApiClient } from '../api/ApiClient-clean';
 
 // Global app reference for accessing Obsidian API
 declare const app: App;
@@ -36,6 +37,7 @@ interface FileNode {
 interface FileManagerViewProps {
   onFileSelect?: (file: TFile) => void;
   onFolderSelect?: (folder: TFolder) => void;
+  apiClient?: ApiClient;
   className?: string;
 }
 
@@ -45,6 +47,7 @@ type SortType = 'name' | 'modified' | 'size' | 'status';
 export const FileManagerView: React.FC<FileManagerViewProps> = ({
   onFileSelect,
   onFolderSelect,
+  apiClient,
   className = ""
 }) => {
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
@@ -54,6 +57,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
   const [sortBy, setSortBy] = useState<SortType>('name');
   const [searchQuery, setSearchQuery] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isWatcherActive, setIsWatcherActive] = useState(false);
   const [processingStats, setProcessingStats] = useState({
     total: 0,
     processed: 0,
@@ -71,6 +75,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
   useEffect(() => {
     loadFileTree();
     loadProcessingStats();
+    checkWatcherStatus();
   }, []);
 
   // Refresh data periodically
@@ -87,6 +92,11 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
 
   const loadFileTree = async () => {
     try {
+      // Try to sync with backend first if API client is available
+      if (apiClient) {
+        await syncWithBackend();
+      }
+      
       await fileCache.loadMetadata();
       const tree = buildFileTree(app.vault.getRoot());
       setFileTree(tree);
@@ -95,15 +105,69 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
     }
   };
 
-  const loadProcessingStats = () => {
-    const stats = processingManager.getProcessingStats();
-    setProcessingStats({
-      total: stats.totalFiles,
-      processed: stats.processedFiles,
-      queued: stats.queuedFiles,
-      unprocessed: stats.unprocessedFiles,
-      error: stats.errorFiles
-    });
+  const syncWithBackend = async () => {
+    try {
+      // Trigger a vault scan to sync file changes
+      const vaultPath = app.vault.adapter.path;
+      const response = await fetch(`${apiClient.baseURL}/api/v1/vault/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vault_path: vaultPath,
+          force_rescan: false
+        })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Backend sync completed:', result);
+      }
+    } catch (error) {
+      console.error('Error syncing with backend:', error);
+      // Don't throw - allow fallback to local cache
+    }
+  };
+
+  const loadProcessingStats = async () => {
+    try {
+      // Try to get stats from backend first if API client is available
+      if (apiClient) {
+        const response = await fetch(`${apiClient.baseURL}/api/v1/vault/status`);
+        
+        if (response.ok) {
+          const backendStats = await response.json();
+          setProcessingStats({
+            total: backendStats.total_files,
+            processed: backendStats.processed,
+            queued: backendStats.queued,
+            unprocessed: backendStats.unprocessed,
+            error: backendStats.error
+          });
+          return; // Use backend stats if available
+        }
+      }
+      
+      // Fallback to local processing manager
+      const stats = processingManager.getProcessingStats();
+      setProcessingStats({
+        total: stats.totalFiles,
+        processed: stats.processedFiles,
+        queued: stats.queuedFiles,
+        unprocessed: stats.unprocessedFiles,
+        error: stats.errorFiles
+      });
+    } catch (error) {
+      console.error('Error loading processing stats:', error);
+      // Fallback to local stats on error
+      const stats = processingManager.getProcessingStats();
+      setProcessingStats({
+        total: stats.totalFiles,
+        processed: stats.processedFiles,
+        queued: stats.queuedFiles,
+        unprocessed: stats.unprocessedFiles,
+        error: stats.errorFiles
+      });
+    }
   };
 
   const buildFileTree = (folder: TFolder): FileNode[] => {
@@ -253,17 +317,44 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
   };
 
   const processSelectedFiles = async () => {
-    const selectedFiles = Array.from(selectedNodes)
-      .map(path => app.vault.getAbstractFileByPath(path))
-      .filter((file): file is TFile => file instanceof TFile);
+    const selectedFilePaths = Array.from(selectedNodes)
+      .map(path => {
+        const file = app.vault.getAbstractFileByPath(path);
+        return file instanceof TFile ? path : null;
+      })
+      .filter((path): path is string => path !== null);
 
-    if (selectedFiles.length === 0) {
+    if (selectedFilePaths.length === 0) {
       return;
     }
 
     setIsProcessing(true);
     try {
-      await processingManager.processVaultFiles(selectedFiles, false);
+      // Use new backend API for queueing and processing
+      if (apiClient) {
+        const response = await fetch(`${apiClient.baseURL}/api/v1/vault/process`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            file_paths: selectedFilePaths,
+            force_reprocess: false
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to queue files: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.log('Files queued for processing:', result);
+      } else {
+        // Fallback to old processing manager
+        const selectedFiles = selectedFilePaths
+          .map(path => app.vault.getAbstractFileByPath(path))
+          .filter((file): file is TFile => file instanceof TFile);
+        await processingManager.processVaultFiles(selectedFiles, false);
+      }
+      
       await loadFileTree();
       loadProcessingStats();
     } catch (error) {
@@ -274,17 +365,115 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
   };
 
   const queueSelectedFiles = async () => {
-    const selectedFiles = Array.from(selectedNodes)
-      .map(path => app.vault.getAbstractFileByPath(path))
-      .filter((file): file is TFile => file instanceof TFile);
+    const selectedFilePaths = Array.from(selectedNodes)
+      .map(path => {
+        const file = app.vault.getAbstractFileByPath(path);
+        return file instanceof TFile ? path : null;
+      })
+      .filter((path): path is string => path !== null);
 
-    if (selectedFiles.length === 0) {
+    if (selectedFilePaths.length === 0) {
       return;
     }
 
-    await processingManager.queueFiles(selectedFiles);
-    await loadFileTree();
-    loadProcessingStats();
+    try {
+      // Use new backend API for queueing
+      if (apiClient) {
+        const response = await fetch(`${apiClient.baseURL}/api/v1/vault/process`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            file_paths: selectedFilePaths,
+            force_reprocess: false
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to queue files: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.log('Files queued:', result);
+      } else {
+        // Fallback to old processing manager
+        const selectedFiles = selectedFilePaths
+          .map(path => app.vault.getAbstractFileByPath(path))
+          .filter((file): file is TFile => file instanceof TFile);
+        await processingManager.queueFiles(selectedFiles);
+      }
+      
+      await loadFileTree();
+      loadProcessingStats();
+    } catch (error) {
+      console.error('Error queueing files:', error);
+    }
+  };
+
+  const toggleFileWatcher = async () => {
+    if (!apiClient) {
+      console.warn('API client not available for file watcher');
+      return;
+    }
+
+    try {
+      if (isWatcherActive) {
+        // Stop file watcher
+        const response = await fetch(`${apiClient.baseURL}/api/v1/vault/watcher/stop`, {
+          method: 'POST'
+        });
+        
+        if (response.ok) {
+          setIsWatcherActive(false);
+          console.log('File watcher stopped');
+        }
+      } else {
+        // Start file watcher
+        const vaultPath = app.vault.adapter.path;
+        const response = await fetch(`${apiClient.baseURL}/api/v1/vault/watcher/start?vault_path=${encodeURIComponent(vaultPath)}`, {
+          method: 'POST'
+        });
+        
+        if (response.ok) {
+          setIsWatcherActive(true);
+          console.log('File watcher started');
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling file watcher:', error);
+    }
+  };
+
+  const checkWatcherStatus = async () => {
+    if (!apiClient) return;
+
+    try {
+      const response = await fetch(`${apiClient.baseURL}/api/v1/vault/watcher/status`);
+      
+      if (response.ok) {
+        const result = await response.json();
+        setIsWatcherActive(result.status?.is_watching || false);
+      }
+    } catch (error) {
+      console.error('Error checking watcher status:', error);
+    }
+  };
+
+  const selectFilesByStatus = (status: FilterType) => {
+    const getNodesByStatus = (nodes: FileNode[]): string[] => {
+      const matching: string[] = [];
+      nodes.forEach(node => {
+        if (node.type === 'file' && (status === 'all' || node.status === status)) {
+          matching.push(node.path);
+        }
+        if (node.type === 'folder' && node.children) {
+          matching.push(...getNodesByStatus(node.children));
+        }
+      });
+      return matching;
+    };
+
+    const matchingNodes = getNodesByStatus(filteredAndSortedTree);
+    setSelectedNodes(new Set(matchingNodes));
   };
 
   const addSelectedToContext = () => {
@@ -510,7 +699,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
           </div>
         )}
 
-        <div className="flex gap-2 text-xs">
+        <div className="flex gap-2 text-xs flex-wrap">
           <button
             onClick={selectAllVisible}
             className="px-2 py-1 border border-border rounded hover:bg-muted"
@@ -518,11 +707,33 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
             Select All
           </button>
           <button
+            onClick={() => selectFilesByStatus('unprocessed')}
+            className="px-2 py-1 border border-border rounded hover:bg-muted"
+          >
+            Select Unprocessed
+          </button>
+          <button
+            onClick={() => selectFilesByStatus('error')}
+            className="px-2 py-1 border border-border rounded hover:bg-muted"
+          >
+            Select Errors
+          </button>
+          <button
             onClick={loadFileTree}
             className="px-2 py-1 border border-border rounded hover:bg-muted"
           >
             Refresh
           </button>
+          {apiClient && (
+            <button
+              onClick={toggleFileWatcher}
+              className={`px-2 py-1 border border-border rounded hover:bg-muted ${
+                isWatcherActive ? 'bg-green-100 text-green-800' : 'bg-gray-100'
+              }`}
+            >
+              {isWatcherActive ? '👀 Watching' : '👁️ Start Watch'}
+            </button>
+          )}
         </div>
       </div>
 

@@ -28,7 +28,7 @@ vllm_config:
   load_format: "auto"
   gpu_memory_utilization: 0.2  # Lower for embedding models
   dtype: "auto"
-  max_num_seqs: 32  # Higher for embedding batch processing
+  max_num_seqs: 4  # Higher for embedding batch processing
   tensor_parallel_size: 1
   trust_remote_code: true
   disable_log_requests: true

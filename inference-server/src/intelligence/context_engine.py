@@ -49,7 +49,7 @@ class ContextEngine:
         
         # Load context config
         self.config_loader = ConfigLoader()
-        self.intelligence_config = self.config_loader.load_config('configs/intelligence.yaml')
+        self.intelligence_config = self.config_loader.load_config('configs/routing.yaml')
         self.context_config = self.intelligence_config['context']
         self.max_tokens = self.context_config.get('max_tokens', 8000)
         
