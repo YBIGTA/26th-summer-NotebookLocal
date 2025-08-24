@@ -11,10 +11,12 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { TFile, TFolder, TAbstractFile } from 'obsidian';
+import { TFile, TFolder, TAbstractFile, App } from 'obsidian';
 import { VaultProcessingManager } from '../vault/VaultProcessingManager';
 import { VaultFileCache, VaultFileMetadata } from '../vault/VaultFileCache';
-// Legacy RAG context import removed
+
+// Global app reference for accessing Obsidian API
+declare const app: App;
 
 interface FileNode {
   id: string;
@@ -61,8 +63,9 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
   });
 
   const fileCache = VaultFileCache.getInstance<string>();
-  const ragContextManager = RagContextManager.getInstance();
-  const processingManager = ragContextManager.getProcessingManager();
+  // Note: VaultProcessingManager should be passed as prop or accessed differently
+  // For now, accessing directly from app (needs refactoring)
+  const processingManager = new VaultProcessingManager(app, null as any);
 
   // Load file tree and metadata
   useEffect(() => {
@@ -134,8 +137,8 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
           extension: child.extension,
           size: child.stat.size,
           modified: new Date(child.stat.mtime),
-          status: metadata?.processing_status || 'unprocessed',
-          errorMessage: metadata?.error_message,
+          status: metadata?.processingStatus || 'unprocessed',
+          errorMessage: metadata?.errorMessage,
           isSelected: selectedNodes.has(child.path)
         };
         nodes.push(fileNode);
@@ -286,7 +289,6 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
 
   const addSelectedToContext = () => {
     // Legacy add to context removed - files are now automatically included via @mentions
-    }
   };
 
   const getStatusIcon = (status?: string): string => {
@@ -325,10 +327,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
     return `${Math.round(size)}${units[unit]}`;
   };
 
-  const formatDate = (date?: Date): string => {
-    if (!date) return '';
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
+  // formatDate removed - not used in current UI
 
   const renderNode = (node: FileNode, depth: number = 0): React.ReactNode => {
     const indentStyle = { paddingLeft: `${depth * 16 + 8}px` };
