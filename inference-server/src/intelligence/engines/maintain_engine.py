@@ -161,24 +161,12 @@ class MaintainEngine(BaseEngine):
     async def _handle_organize(self, message: str, context: ContextPyramid) -> EngineResponse:
         """Handle organization suggestions."""
         
-        system_prompt = """You are a knowledge organization specialist. Analyze the user's vault structure and suggest improvements while respecting their existing system.
-
-Provide specific, actionable organization suggestions."""
-
         context_text = self._format_context_simple(context)
         
-        user_prompt = f"""Suggest organization improvements: {message}
-
-Current content:
-{context_text}
-
-How can I better organize this content while preserving my existing system?"""
-
-        response_text = await self._query_llm(
-            system_prompt=system_prompt,
-            user_message=user_prompt,
-            temperature=0.4,
-            max_tokens=800
+        response_text = await self._query_llm_with_templates(
+            sub_capability='organize',
+            message=message,
+            context=context_text
         )
         
         return EngineResponse(
@@ -227,23 +215,17 @@ How can I better organize this content while preserving my existing system?"""
         
         # Perform broad health analysis
         health_analysis = self._analyze_vault_health(context)
-        
-        system_prompt = """You are a vault maintenance specialist. Provide helpful maintenance suggestions based on the user's request and vault analysis."""
-
         analysis_text = self._format_health_analysis(health_analysis)
         
-        user_prompt = f"""Help with vault maintenance: {message}
-
-Vault analysis:
-{analysis_text}
-
-What maintenance actions do you recommend?"""
-
-        response_text = await self._query_llm(
-            system_prompt=system_prompt,
-            user_message=user_prompt,
-            temperature=0.3,
-            max_tokens=700
+        response_text = await self._query_llm_with_templates(
+            sub_capability='general',
+            message=message,
+            context=analysis_text,
+            template_variables={
+                'broken_links_count': len(health_analysis.get('broken_links', [])),
+                'orphans_count': len(health_analysis.get('orphans', [])),
+                'total_files': len(health_analysis.get('files', []))
+            }
         )
         
         return EngineResponse(

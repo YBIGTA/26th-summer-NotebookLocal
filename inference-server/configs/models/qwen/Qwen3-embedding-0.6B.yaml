@@ -26,7 +26,7 @@ vllm_config:
   max_model_len: 8192
   quantization: "none"  # Embeddings usually don't need quantization
   load_format: "auto"
-  gpu_memory_utilization: 0.6  # Lower for embedding models
+  gpu_memory_utilization: 0.2  # Lower for embedding models
   dtype: "auto"
   max_num_seqs: 32  # Higher for embedding batch processing
   tensor_parallel_size: 1

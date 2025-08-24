@@ -43,14 +43,14 @@ class NavigateEngine(BaseEngine):
             if intent.sub_capability == 'search':
                 return await self._handle_search(message, context)
             elif intent.sub_capability == 'discover':
-                return await self._handle_discover(message, context)
+                return await self._handle_discover(message, context, intent)
             elif intent.sub_capability == 'recommend':
-                return await self._handle_recommend(message, context)
+                return await self._handle_recommend(message, context, intent)
             elif intent.sub_capability == 'browse':
-                return await self._handle_browse(message, context)
+                return await self._handle_browse(message, context, intent)
             else:
                 # General navigation
-                return await self._handle_general_navigation(message, context)
+                return await self._handle_general_navigation(message, context, intent)
                 
         except Exception as e:
             self.logger.error(f"Error in NavigateEngine: {e}")
@@ -128,37 +128,19 @@ class NavigateEngine(BaseEngine):
             processing_time=time.time() - time.time()
         )
     
-    async def _handle_discover(self, message: str, context: ContextPyramid) -> EngineResponse:
+    async def _handle_discover(self, message: str, context: ContextPyramid, intent: DetectedIntent = None) -> EngineResponse:
         """Handle discovery requests - find forgotten or related content."""
         
-        # Use LLM to understand what user wants to discover
-        system_prompt = """You are a knowledge discovery assistant. The user wants to rediscover or find connections in their vault content.
-
-Your job is to:
-1. Analyze the provided context for patterns and connections
-2. Highlight content the user might have forgotten
-3. Suggest interesting connections between notes
-4. Point out related topics they might want to explore
-
-Focus on discovery and connection-making, not just answering questions."""
-
+        # Use template-based prompts
         context_text = self._format_context_simple(context)
         
-        user_prompt = f"""Help me discover connections and forgotten knowledge.
-
-My request: {message}
-
-Here's the relevant context from my vault:
-{context_text}
-
-What interesting discoveries, connections, or forgotten content should I know about?"""
-
-        response_text = await self._query_llm(
-            system_prompt=system_prompt,
-            user_message=user_prompt,
-            model_preference="claude-3-5-sonnet-20241022",
-            temperature=0.4,  # Slightly higher for creative connections
-            max_tokens=1000
+        response_text = await self._query_llm_with_templates(
+            sub_capability='discover',
+            message=message,
+            context=context_text,
+            template_variables={
+                'context_items_count': len(context.items)
+            }
         )
         
         # Extract mentioned files for source citations
@@ -181,36 +163,15 @@ What interesting discoveries, connections, or forgotten content should I know ab
             processing_time=time.time() - time.time()
         )
     
-    async def _handle_recommend(self, message: str, context: ContextPyramid) -> EngineResponse:
+    async def _handle_recommend(self, message: str, context: ContextPyramid, intent: DetectedIntent = None) -> EngineResponse:
         """Handle recommendation requests - suggest what to read next."""
         
-        system_prompt = """You are a reading recommendation assistant for an Obsidian vault.
-
-Your job is to:
-1. Analyze the user's current context and interests
-2. Recommend specific notes to read next
-3. Suggest reading paths and exploration routes
-4. Explain why each recommendation is valuable
-
-Provide actionable recommendations with clear reasoning."""
-
         context_text = self._format_context_simple(context)
         
-        user_prompt = f"""Recommend what I should read or explore next.
-
-My request: {message}
-
-Context from my current work:
-{context_text}
-
-What should I read next and why?"""
-
-        response_text = await self._query_llm(
-            system_prompt=system_prompt,
-            user_message=user_prompt,
-            model_preference="gpt-4o-mini",  # Good for recommendations
-            temperature=0.5,  # Higher creativity for recommendations
-            max_tokens=600
+        response_text = await self._query_llm_with_templates(
+            sub_capability='recommend',
+            message=message,
+            context=context_text
         )
         
         sources = self._extract_source_citations(response_text, context)
@@ -232,43 +193,23 @@ What should I read next and why?"""
             processing_time=time.time() - time.time()
         )
     
-    async def _handle_browse(self, message: str, context: ContextPyramid) -> EngineResponse:
+    async def _handle_browse(self, message: str, context: ContextPyramid, intent: DetectedIntent = None) -> EngineResponse:
         """Handle browse requests - explore vault structure and content."""
         
         # Analyze vault structure from context
         structure_analysis = self._analyze_vault_structure(context)
-        
-        system_prompt = """You are a vault browsing assistant. Help users explore and understand their vault structure.
-
-Your job is to:
-1. Show the user what's available in their vault
-2. Highlight interesting areas to explore
-3. Provide overview of content organization
-4. Suggest navigation paths through their knowledge
-
-Be like a knowledgeable librarian guiding exploration."""
-
         context_text = self._format_context_simple(context)
         structure_text = self._format_structure_analysis(structure_analysis)
         
-        user_prompt = f"""Help me browse and explore my vault.
-
-My request: {message}
-
-Vault structure overview:
-{structure_text}
-
-Available content:
-{context_text}
-
-What should I explore and how should I navigate my vault?"""
-
-        response_text = await self._query_llm(
-            system_prompt=system_prompt,
-            user_message=user_prompt,
-            model_preference="gpt-4o-mini",
-            temperature=0.6,  # Creative exploration
-            max_tokens=800
+        response_text = await self._query_llm_with_templates(
+            sub_capability='browse',
+            message=message,
+            context=context_text,
+            template_variables={
+                'vault_structure': structure_text,
+                'folders_count': len(structure_analysis['folders']),
+                'tags_count': len(structure_analysis['tags'])
+            }
         )
         
         sources = self._extract_source_citations(response_text, context)
@@ -290,29 +231,15 @@ What should I explore and how should I navigate my vault?"""
             processing_time=time.time() - time.time()
         )
     
-    async def _handle_general_navigation(self, message: str, context: ContextPyramid) -> EngineResponse:
+    async def _handle_general_navigation(self, message: str, context: ContextPyramid, intent: DetectedIntent = None) -> EngineResponse:
         """Handle general navigation requests."""
         
-        system_prompt = """You are a vault navigation assistant. Help users find and explore their knowledge effectively.
-
-Analyze their request and context to provide the most helpful navigation assistance, whether that's finding specific content, making connections, or suggesting exploration paths."""
-
         context_text = self._format_context_simple(context)
         
-        user_prompt = f"""Help me navigate my vault effectively.
-
-My request: {message}
-
-Available context:
-{context_text}
-
-How can I best explore or find what I'm looking for?"""
-
-        response_text = await self._query_llm(
-            system_prompt=system_prompt,
-            user_message=user_prompt,
-            temperature=0.4,
-            max_tokens=700
+        response_text = await self._query_llm_with_templates(
+            sub_capability='general',
+            message=message,
+            context=context_text
         )
         
         return EngineResponse(

@@ -20,13 +20,33 @@ logger = logging.getLogger(__name__)
 class HybridStore:
     """Coordinates between PostgreSQL (metadata) and Weaviate (vectors)."""
     
+    _instance = None
+    
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
     def __init__(
         self,
         vector_store: Union[WeaviateVectorStore, SimpleVectorStore],
         embedder: Embedder
     ):
+        if hasattr(self, '_initialized'):
+            return
+            
         self.vector_store = vector_store
         self.embedder = embedder
+        self._initialized = True
+    
+    @classmethod
+    def get_instance(cls, vector_store=None, embedder=None):
+        """Get singleton instance. If not initialized, requires vector_store and embedder."""
+        if cls._instance is None:
+            if vector_store is None or embedder is None:
+                raise ValueError("HybridStore not initialized. Provide vector_store and embedder.")
+            return cls(vector_store, embedder)
+        return cls._instance
     
     def store_document(
         self,

@@ -16,6 +16,7 @@ from ..database.models import VaultFile
 from ..database.connection import get_db_connection
 from ..storage.hybrid_store import HybridStore
 from ..processors.embedder import Embedder
+from ..llm.utils.config_loader import ConfigLoader
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,12 @@ class ContextEngine:
     def __init__(self, hybrid_store: HybridStore, embedder: Embedder):
         self.store = hybrid_store
         self.embedder = embedder
-        self.max_tokens = 8000  # Conservative limit for most models
+        
+        # Load context config
+        self.config_loader = ConfigLoader()
+        self.intelligence_config = self.config_loader.load_config('configs/intelligence.yaml')
+        self.context_config = self.intelligence_config['context']
+        self.max_tokens = self.context_config.get('max_tokens', 8000)
         
     async def build_context_pyramid(
         self,

@@ -16,5 +16,47 @@ rules:
   
   # Content-based routing - using only available models
   chat_default: gpt-4o-mini                    # Chat model we have config for
-  vision_default: gpt-4o-mini       # Vision model we have config for
-  embedding_default: text-embedding-3-large                         # Embedding model we have config for
+  vision_default: gpt-4o-mini                  # Vision model we have config for
+  embedding_default: text-embedding-3-large   # Embedding model we have config for
+
+# Intelligence system configuration - uses chat_default from rules
+intelligence:
+  # Use the default chat model for all intelligence operations
+  use_chat_default: true
+  
+  # Engine-specific parameters (all use chat_default model)
+  engines:
+    understand:
+      temperature: 0.3
+      max_tokens: 1000
+      
+    navigate:
+      temperature: 0.4
+      max_tokens: 800
+      
+    transform:
+      temperature: 0.3
+      max_tokens: 1200
+      
+    synthesize:
+      temperature: 0.2
+      max_tokens: 1500
+      
+    maintain:
+      temperature: 0.1
+      max_tokens: 800
+
+  # Context building configuration
+  context:
+    max_tokens: 8000
+    token_limits:
+      understand: 8000
+      navigate: 9600    # 20% more for discovery
+      transform: 4800   # 40% less, focus on current content  
+      synthesize: 12000 # 50% more for pattern finding
+      maintain: 6400    # 20% less for structural tasks
+
+  # Intent detection configuration  
+  intent_detection:
+    confidence_threshold: 0.6
+    use_llm_fallback: true

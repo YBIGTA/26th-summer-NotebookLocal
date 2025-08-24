@@ -223,13 +223,34 @@ class QwenAdapter(BaseAdapter):
         port = model_config.get('port')
         served_name = model_config.get('served_model_name', model_name)
         
+        # Get parameters from request or validate model config - NO FALLBACKS
+        temperature = request.temperature
+        max_tokens = request.max_tokens
+        top_p = request.top_p
+        
+        # If not provided in request, must be in model config
+        if temperature is None:
+            if 'temperature' not in model_config:
+                raise ValueError(f"temperature not configured for model {model_name}")
+            temperature = model_config['temperature']
+        
+        if max_tokens is None:
+            if 'max_tokens' not in model_config:
+                raise ValueError(f"max_tokens not configured for model {model_name}")
+            max_tokens = model_config['max_tokens']
+            
+        if top_p is None:
+            if 'top_p' not in model_config:
+                raise ValueError(f"top_p not configured for model {model_name}")
+            top_p = model_config['top_p']
+        
         payload = {
             "model": served_name,
             "messages": messages,
             "stream": True,
-            "temperature": getattr(request, 'temperature', model_config.get('temperature', 0.7)),
-            "max_tokens": getattr(request, 'max_tokens', model_config.get('max_tokens', 2048)),
-            "top_p": getattr(request, 'top_p', model_config.get('top_p', 1.0))
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "top_p": top_p
         }
         
         try:

@@ -16,12 +16,28 @@ logger = logging.getLogger(__name__)
 class LLMRouter:
     """Universal router for directing chat, embedding, and vision requests to appropriate adapters"""
     
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
     def __init__(self):
+        if hasattr(self, '_initialized'):
+            return
+        
         self.config_loader = ConfigLoader()
         self.routing_config = self.config_loader.load_config('configs/routing.yaml')
         self.adapters_config = self.config_loader.load_config('configs/adapters.yaml')
         self.adapters: Dict[str, BaseAdapter] = {}
         self._initialize_adapters()
+        self._initialized = True
+    
+    @classmethod
+    def get_instance(cls):
+        """Get singleton instance."""
+        return cls()
     
     def _initialize_adapters(self):
         """Initialize all configured adapters"""

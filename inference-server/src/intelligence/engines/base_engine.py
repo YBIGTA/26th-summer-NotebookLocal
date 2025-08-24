@@ -16,8 +16,10 @@ import time
 
 from ...llm.core.router import LLMRouter
 from ...llm.models.requests import ChatRequest, Message
+from ...llm.utils.config_loader import ConfigLoader
 from ..context_engine import ContextPyramid
 from ..intent_detector import DetectedIntent
+from ..prompt_manager import PromptManager
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,14 @@ class BaseEngine:
         self.llm_router = llm_router
         self.engine_name = engine_name
         self.logger = logging.getLogger(f"{__name__}.{engine_name}")
+        
+        # Load routing config for model selection
+        self.config_loader = ConfigLoader()
+        self.routing_config = self.config_loader.load_config('configs/routing.yaml')
+        self.engine_config = self.routing_config['intelligence']['engines'].get(engine_name.lower(), {})
+        
+        # Initialize prompt manager for configurable templates
+        self.prompt_manager = PromptManager(self.config_loader)
     
     async def process(
         self,
@@ -61,26 +71,45 @@ class BaseEngine:
         self,
         system_prompt: str,
         user_message: str,
-        model_preference: str = "gpt-4o-mini",
+        model_preference: str = None,
         temperature: float = 0.3,
         max_tokens: int = 1000
     ) -> str:
-        """Query LLM with proper error handling."""
+        """Query LLM with proper error handling and config-based routing."""
         
         start_time = time.time()
         
         try:
+            # Use config-based model selection if no preference provided
+            model_to_use = model_preference
+            if not model_to_use:
+                # Use chat_default from routing rules if intelligence is configured to do so
+                if self.routing_config['intelligence'].get('use_chat_default', False):
+                    model_to_use = self.routing_config['rules']['chat_default']
+                else:
+                    # Let router decide based on routing config
+                    model_to_use = None
+            
+            # Use config-based parameters - NO FALLBACKS
+            if 'temperature' not in self.engine_config:
+                raise ValueError(f"temperature not configured for engine {self.engine_name}")
+            if 'max_tokens' not in self.engine_config:
+                raise ValueError(f"max_tokens not configured for engine {self.engine_name}")
+            
+            config_temperature = self.engine_config['temperature']
+            config_max_tokens = self.engine_config['max_tokens']
+            
             request = ChatRequest(
                 messages=[
                     Message(role="system", content=system_prompt),
                     Message(role="user", content=user_message)
                 ],
-                model=model_preference,
-                temperature=temperature,
-                max_tokens=max_tokens
+                model=model_to_use,
+                temperature=config_temperature,
+                max_tokens=config_max_tokens
             )
             
-            self.logger.info(f"📤 Querying LLM: {model_preference} (temp={temperature})")
+            self.logger.info(f"📤 Querying LLM: {model_to_use or 'config-default'} (temp={config_temperature})")
             
             response = await self.llm_router.route(request)
             
@@ -96,6 +125,44 @@ class BaseEngine:
             elapsed = time.time() - start_time
             self.logger.error(f"❌ LLM query failed after {elapsed:.2f}s: {e}")
             raise
+    
+    async def _query_llm_with_templates(
+        self,
+        sub_capability: str,
+        message: str,
+        context: str = "",
+        template_variables: Dict[str, Any] = None,
+        model_preference: str = None,
+        temperature: float = None,
+        max_tokens: int = None
+    ) -> str:
+        """Query LLM using configurable prompt templates."""
+        
+        template_variables = template_variables or {}
+        
+        # Get prompts from template system
+        system_prompt = self.prompt_manager.get_system_prompt(
+            engine_name=self.engine_name.lower().replace('engine', ''),
+            sub_capability=sub_capability,
+            variables=template_variables
+        )
+        
+        user_prompt = self.prompt_manager.get_user_prompt(
+            engine_name=self.engine_name.lower().replace('engine', ''),
+            sub_capability=sub_capability,
+            message=message,
+            context=context,
+            **template_variables
+        )
+        
+        # Use the standard _query_llm with template-generated prompts
+        return await self._query_llm(
+            system_prompt=system_prompt,
+            user_message=user_prompt,
+            model_preference=model_preference,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
     
     def _estimate_confidence(
         self,

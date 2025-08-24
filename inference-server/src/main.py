@@ -2,7 +2,6 @@ from .processors.embedder import Embedder
 from .storage.vector_store import get_vector_store
 from .storage.hybrid_store import HybridStore
 from .workflows.document_workflow import DocumentWorkflow
-from .workflows.qa_workflow import QAWorkflow
 from .database.init_db import init_database_on_startup
 from .llm.core.router import LLMRouter
 import logging
@@ -37,10 +36,9 @@ class LectureProcessor:
             self.store = get_vector_store(self.embedder.embed)
         
         self.document_workflow = DocumentWorkflow(self.store, self.embedder, router=self.router)
-        self.qa_workflow = QAWorkflow(self.store, self.embedder, llm_router=self.router)
+        # QA workflow removed - now handled by intelligence system
 
     async def process_document(self, pdf_path: str):
         return await self.document_workflow.run(pdf_path)
 
-    async def ask_question(self, question: str) -> str:
-        return await self.qa_workflow.ask(question)
+    # ask_question removed - now handled by intelligence system via /api/v1/intelligence/chat

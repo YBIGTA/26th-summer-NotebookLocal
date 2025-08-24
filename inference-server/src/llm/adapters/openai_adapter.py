@@ -28,6 +28,12 @@ class OpenAIAdapter(BaseAdapter):
         
         # Initialize OpenAI client for all operations
         self.openai_client = OpenAI(api_key=api_key)
+    
+    def _get_default_model(self) -> str:
+        """Get default model from adapter config - NO FALLBACKS"""
+        if 'default_model' not in self.config:
+            raise ValueError("default_model not configured for OpenAI adapter")
+        return self.config['default_model']
         
         logger.info("Initialized OpenAIAdapter (stateless)")
     
@@ -35,7 +41,7 @@ class OpenAIAdapter(BaseAdapter):
         """Convert LangChain response to OpenAI format"""
         return ChatResponse(
             id=str(uuid.uuid4()),
-            model=request.model or self.config.get('default_model', 'gpt-3.5-turbo'),
+            model=request.model if request.model else self._get_default_model(),
             created=int(time.time()),
             choices=[
                 Choice(
@@ -60,7 +66,7 @@ class OpenAIAdapter(BaseAdapter):
             "id": str(uuid.uuid4()),
             "object": "chat.completion.chunk",
             "created": int(time.time()),
-            "model": request.model or self.config.get('default_model', 'gpt-3.5-turbo'),
+            "model": request.model if request.model else self._get_default_model(),
             "choices": [{
                 "index": 0,
                 "delta": {"content": langchain_chunk.content},

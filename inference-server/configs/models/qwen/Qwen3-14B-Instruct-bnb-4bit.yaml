@@ -26,9 +26,9 @@ vllm_config:
   max_model_len: 32768
   quantization: "bitsandbytes"
   load_format: "bitsandbytes"
-  gpu_memory_utilization: 0.8
+  gpu_memory_utilization: 0.75
   dtype: "auto"
-  max_num_seqs: 16
+  max_num_seqs: 2
   tensor_parallel_size: 1
   trust_remote_code: true
   disable_log_requests: true
@@ -64,32 +64,5 @@ context_window: 32768
 description: "Local Qwen3-14B model for general text generation"
 use_cases: ["local_inference", "privacy_focused", "general_text"]
 
-# Workflow-specific configurations
-workflows:
-  qa_workflow:
-    system_prompt: |
-      Answer the question based on the provided context.
-      If you cannot find the answer in the context, say "I cannot find information about this in the provided context."
-    parameters:
-      temperature: 0.8  # Higher creativity for local model
-      max_tokens: 2048
-      top_p: 0.95
-      top_k: 40
-      repetition_penalty: 1.1
-      frequency_penalty: 0.1
-      presence_penalty: 0.0
-    retrieval:
-      preferred_k: 4
-      context_strategy: "standard"  # Standard context handling
-    post_processing:
-      max_answer_length: 3000
-      add_sources: true
-      
-  summarization_workflow:
-    system_prompt: |
-      Summarize the provided content concisely and comprehensively, maintaining key information.
-    parameters:
-      temperature: 0.6
-      max_tokens: 1024
-      top_p: 0.9
-      repetition_penalty: 1.1
+# Legacy workflow configurations removed - now handled by intelligence system
+# See configs/intelligence.yaml for the new configuration approach

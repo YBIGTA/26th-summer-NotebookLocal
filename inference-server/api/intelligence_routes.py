@@ -55,21 +55,30 @@ class CapabilityInfoResponse(BaseModel):
     total_engines: int
     context_engine: Dict[str, Any]
 
+# Global capability router instance
+_capability_router = None
+
 # Dependency to get capability router
 async def get_capability_router() -> CapabilityRouter:
     """Initialize and return capability router with all engines."""
     
+    global _capability_router
+    
+    if _capability_router is not None:
+        return _capability_router
+    
     try:
-        # Initialize components
-        embedder = Embedder()
+        # Get singletons from main processor (already initialized with config)
+        from api.routes import processor
         
-        # Get hybrid store (assuming it's already initialized)
-        from src.storage.hybrid_store import HybridStore
-        hybrid_store = HybridStore.get_instance()  # Assume singleton pattern
+        # Use existing configured components
+        llm_router = LLMRouter.get_instance()
         
-        # Get LLM router
-        from src.llm.core.router import LLMRouter
-        llm_router = LLMRouter.get_instance()  # Assume singleton pattern
+        # Get embedder from processor (already initialized with router)
+        embedder = processor.embedder
+        
+        # Get hybrid store from processor (already initialized) 
+        hybrid_store = processor.store
         
         # Initialize context engine and intent detector
         context_engine = ContextEngine(hybrid_store, embedder)
@@ -83,7 +92,7 @@ async def get_capability_router() -> CapabilityRouter:
         maintain_engine = MaintainEngine(llm_router)
         
         # Create capability router
-        capability_router = CapabilityRouter(
+        _capability_router = CapabilityRouter(
             context_engine=context_engine,
             intent_detector=intent_detector,
             understand_engine=understand_engine,
@@ -93,7 +102,8 @@ async def get_capability_router() -> CapabilityRouter:
             maintain_engine=maintain_engine
         )
         
-        return capability_router
+        logger.info("✅ Capability router initialized with existing configured components")
+        return _capability_router
         
     except Exception as e:
         logger.error(f"Failed to initialize capability router: {e}")

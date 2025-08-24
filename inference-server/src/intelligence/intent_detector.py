@@ -17,6 +17,8 @@ import re
 
 from ..llm.core.router import LLMRouter
 from ..llm.models.requests import ChatRequest, Message
+from ..llm.utils.config_loader import ConfigLoader
+from .prompt_manager import PromptManager
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,14 @@ class IntentDetector:
     
     def __init__(self, llm_router: LLMRouter):
         self.llm_router = llm_router
+        
+        # Load routing config for intent detection
+        self.config_loader = ConfigLoader()
+        self.routing_config = self.config_loader.load_config('configs/routing.yaml')
+        self.intent_config = self.routing_config['intelligence']['intent_detection']
+        
+        # Initialize prompt manager for configurable templates
+        self.prompt_manager = PromptManager(self.config_loader)
         
         # Pattern-based intent detection (fast fallback)
         self.intent_patterns = {
@@ -132,24 +142,38 @@ class IntentDetector:
         # First try pattern-based detection (fast)
         pattern_result = self._detect_intent_by_patterns(message)
         
-        # If pattern detection is confident, use it
-        if pattern_result.confidence >= 0.8:
+        # Use config threshold for pattern confidence - NO FALLBACKS
+        if 'confidence_threshold' not in self.intent_config:
+            raise ValueError("confidence_threshold not configured in intent_detection")
+        if 'use_llm_fallback' not in self.intent_config:
+            raise ValueError("use_llm_fallback not configured in intent_detection")
+            
+        confidence_threshold = self.intent_config['confidence_threshold']
+        use_llm_fallback = self.intent_config['use_llm_fallback']
+        
+        # If pattern detection is confident enough, use it
+        if pattern_result.confidence >= confidence_threshold:
             logger.info(f"✅ High-confidence pattern detection: {pattern_result.intent_type.value}")
             return pattern_result
         
-        # Otherwise use LLM for more nuanced understanding
-        try:
-            llm_result = await self._detect_intent_with_llm(message, current_note_path, conversation_history)
-            
-            # Combine pattern and LLM results for final decision
-            final_result = self._combine_detection_results(pattern_result, llm_result)
-            logger.info(f"🎯 Final intent: {final_result.intent_type.value} (confidence: {final_result.confidence:.2f})")
-            return final_result
-            
-        except Exception as e:
-            logger.error(f"LLM intent detection failed: {e}")
-            # Fallback to pattern result
-            logger.info(f"🔄 Falling back to pattern detection: {pattern_result.intent_type.value}")
+        # Otherwise use LLM for more nuanced understanding (if enabled)
+        if use_llm_fallback:
+            try:
+                llm_result = await self._detect_intent_with_llm(message, current_note_path, conversation_history)
+                
+                # Combine pattern and LLM results for final decision
+                final_result = self._combine_detection_results(pattern_result, llm_result)
+                logger.info(f"🎯 Final intent: {final_result.intent_type.value} (confidence: {final_result.confidence:.2f})")
+                return final_result
+                
+            except Exception as e:
+                logger.error(f"LLM intent detection failed: {e}")
+                # Fallback to pattern result
+                logger.info(f"🔄 Falling back to pattern detection: {pattern_result.intent_type.value}")
+                return pattern_result
+        else:
+            # LLM fallback disabled, use pattern result
+            logger.info(f"📋 Pattern-only detection: {pattern_result.intent_type.value}")
             return pattern_result
     
     def _detect_intent_by_patterns(self, message: str) -> DetectedIntent:
@@ -208,57 +232,34 @@ class IntentDetector:
     ) -> DetectedIntent:
         """Use LLM for nuanced intent detection."""
         
-        # Build context for LLM
-        context_parts = []
-        if current_note_path:
-            context_parts.append(f"Current note: {current_note_path}")
-        if conversation_history:
-            context_parts.append(f"Recent conversation: {' '.join(conversation_history[-3:])}")
+        # Get intent detection prompts from template system
+        intent_prompts = self.prompt_manager.get_intent_detection_prompt(
+            prompt_type="classification_prompt",
+            message=message,
+            current_note_path=current_note_path,
+            conversation_history=' '.join(conversation_history[-3:]) if conversation_history else None
+        )
         
-        context_text = "\n".join(context_parts) if context_parts else "No additional context"
+        system_prompt = intent_prompts['system_prompt']
+        user_template = intent_prompts['user_template']
         
-        # Intent classification prompt
-        system_prompt = """You are an intent classifier for an Obsidian vault assistant. 
-
-Classify the user's message into one of these five intents:
-
-1. UNDERSTAND - User wants answers/explanations from their vault content
-   Examples: "What did I conclude?", "Explain this concept", "Who mentioned X?"
-
-2. NAVIGATE - User wants to find/discover content in their vault  
-   Examples: "Find my notes about Y", "What have I written before?", "Show related notes"
-
-3. TRANSFORM - User wants to edit/improve existing content
-   Examples: "Make this clearer", "Rewrite this professionally", "Fix the structure"
-
-4. SYNTHESIZE - User wants insights/patterns across multiple notes
-   Examples: "Summarize my research", "What themes emerge?", "Compare these approaches"
-
-5. MAINTAIN - User wants to check/fix vault organization issues
-   Examples: "Check for broken links", "Find duplicates", "Clean up my vault"
-
-Respond with JSON only:
-{
-  "intent": "UNDERSTAND|NAVIGATE|TRANSFORM|SYNTHESIZE|MAINTAIN",
-  "confidence": 0.95,
-  "sub_capability": "specific_type",
-  "parameters": {"key": "value"},
-  "reasoning": "brief explanation"
-}"""
-
-        user_content = f"""Message: "{message}"
-Context: {context_text}
-
-Classify this intent:"""
+        # Render user template with variables
+        user_content = self.prompt_manager._render_template(user_template, {
+            'message': message,
+            'current_note_path': current_note_path,
+            'conversation_history': ' '.join(conversation_history[-3:]) if conversation_history else None
+        })
 
         try:
-            # Get LLM response
+            # Get LLM response with config-based model (use chat_default)
+            llm_model = self.routing_config['rules']['chat_default']
+            
             request = ChatRequest(
                 messages=[
                     Message(role="system", content=system_prompt),
                     Message(role="user", content=user_content)
                 ],
-                model="gpt-4o-mini",  # Use fast model for intent detection
+                model=llm_model,
                 temperature=0.1,  # Low temperature for consistent classification
                 max_tokens=200
             )
@@ -273,12 +274,20 @@ Classify this intent:"""
                 try:
                     result_data = json.loads(response_text)
                     
+                    # Validate required fields - NO FALLBACKS
+                    if 'intent' not in result_data:
+                        raise ValueError("LLM response missing required 'intent' field")
+                    if 'confidence' not in result_data:
+                        raise ValueError("LLM response missing required 'confidence' field")
+                    if 'sub_capability' not in result_data:
+                        raise ValueError("LLM response missing required 'sub_capability' field")
+                    
                     return DetectedIntent(
                         intent_type=IntentType(result_data['intent'].lower()),
-                        confidence=float(result_data.get('confidence', 0.7)),
-                        sub_capability=result_data.get('sub_capability', 'general'),
-                        parameters=result_data.get('parameters', {}),
-                        reasoning=result_data.get('reasoning', 'LLM classification')
+                        confidence=float(result_data['confidence']),
+                        sub_capability=result_data['sub_capability'],
+                        parameters=result_data.get('parameters', {}),  # parameters can be empty dict
+                        reasoning=result_data.get('reasoning', '')     # reasoning can be empty string
                     )
                     
                 except (json.JSONDecodeError, KeyError, ValueError) as e:

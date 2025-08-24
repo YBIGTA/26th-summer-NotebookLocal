@@ -81,33 +81,19 @@ class TransformEngine(BaseEngine):
     async def _handle_rewrite(self, message: str, content: str, context: ContextPyramid) -> EngineResponse:
         """Handle rewrite requests - change tone, style, clarity."""
         
-        system_prompt = """You are a content transformation specialist. Your job is to rewrite content while preserving:
-
-CRITICAL PRESERVATION RULES:
-1. Keep ALL [[wikilinks]] exactly as they are - never change the link syntax
-2. Keep ALL #tags exactly as they are - never change tag syntax  
-3. Preserve the user's personal voice and terminology
-4. Maintain all factual information and meaning
-5. Keep any special Obsidian syntax (like templates, dataview, etc.)
-
-Only change style, clarity, tone, and organization. Always show what you're changing and why."""
-
         # Extract transformation intent from message
         transform_intent = self._extract_transform_intent(message)
         
-        user_prompt = f"""Transform this content: {transform_intent}
-
-Original content:
-{content}
-
-Provide the transformed version, explaining what changes you made and why. Remember to preserve all [[links]] and #tags exactly."""
-
-        response_text = await self._query_llm(
-            system_prompt=system_prompt,
-            user_message=user_prompt,
-            model_preference="claude-3-5-sonnet-20241022",  # Strong model for nuanced editing
-            temperature=0.3,  # Conservative for preservation
-            max_tokens=1200
+        response_text = await self._query_llm_with_templates(
+            sub_capability='rewrite',
+            message=message,
+            context=content,
+            template_variables={
+                'transform_intent': transform_intent,
+                'content_length': len(content.split()),
+                'links_count': len(re.findall(r'\[\[.*?\]\]', content)),
+                'tags_count': len(re.findall(r'#\w+', content))
+            }
         )
         
         # Validate that links and tags are preserved
@@ -137,31 +123,14 @@ Provide the transformed version, explaining what changes you made and why. Remem
     async def _handle_restructure(self, message: str, content: str, context: ContextPyramid) -> EngineResponse:
         """Handle restructure requests - reorganize for better flow."""
         
-        system_prompt = """You are a content restructuring specialist. Your job is to reorganize content for better logical flow while preserving:
-
-CRITICAL PRESERVATION:
-- ALL [[wikilinks]] exactly as written
-- ALL #tags exactly as written  
-- All factual information and meaning
-- User's voice and terminology
-
-Focus on improving organization, flow, and readability through better structure."""
-
-        user_prompt = f"""Restructure this content for better organization and flow:
-
-Original content:
-{content}
-
-Request: {message}
-
-Show the restructured version with clear section headings and improved logical flow."""
-
-        response_text = await self._query_llm(
-            system_prompt=system_prompt,
-            user_message=user_prompt,
-            model_preference="claude-3-5-sonnet-20241022",
-            temperature=0.3,
-            max_tokens=1200
+        response_text = await self._query_llm_with_templates(
+            sub_capability='restructure',
+            message=message,
+            context=content,
+            template_variables={
+                'content_length': len(content.split()),
+                'has_headings': bool(re.search(r'^#+\s', content, re.MULTILINE))
+            }
         )
         
         validation_result = self._validate_preservation(content, response_text)
@@ -194,31 +163,10 @@ Show the restructured version with clear section headings and improved logical f
     async def _handle_general_transform(self, message: str, content: str, context: ContextPyramid) -> EngineResponse:
         """Handle general transformation requests."""
         
-        system_prompt = """You are a content improvement specialist. Transform content according to the user's request while strictly preserving:
-
-MUST PRESERVE:
-- ALL [[wikilinks]] in exact original format
-- ALL #tags in exact original format
-- User's personal voice and terminology
-- All factual information
-
-Show a clear before/after comparison of your changes."""
-
-        user_prompt = f"""Transform this content based on my request:
-
-Request: {message}
-
-Content to transform:
-{content}
-
-Provide the improved version, clearly showing what you changed and why."""
-
-        response_text = await self._query_llm(
-            system_prompt=system_prompt,
-            user_message=user_prompt,
-            model_preference="claude-3-5-sonnet-20241022",
-            temperature=0.3,
-            max_tokens=1200
+        response_text = await self._query_llm_with_templates(
+            sub_capability='general',
+            message=message,
+            context=content
         )
         
         validation_result = self._validate_preservation(content, response_text)

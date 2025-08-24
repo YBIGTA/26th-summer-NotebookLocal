@@ -19,6 +19,7 @@ from .engines.navigate_engine import NavigateEngine
 from .engines.transform_engine import TransformEngine  
 from .engines.synthesize_engine import SynthesizeEngine
 from .engines.maintain_engine import MaintainEngine
+from ..llm.utils.config_loader import ConfigLoader
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,11 @@ class CapabilityRouter:
     ):
         self.context_engine = context_engine
         self.intent_detector = intent_detector
+        
+        # Load intelligence config for token limits
+        self.config_loader = ConfigLoader()
+        self.intelligence_config = self.config_loader.load_config('configs/intelligence.yaml')
+        self.context_config = self.intelligence_config['context']
         
         # The five capability engines
         self.engines = {
@@ -143,14 +149,17 @@ class CapabilityRouter:
     ) -> ContextPyramid:
         """Build context pyramid optimized for specific intent type."""
         
-        # Adjust context building strategy based on intent
+        # Adjust context building strategy based on intent using config-based token limits
+        intent_name = intent.intent_type.name.lower()
+        max_tokens = self.context_config['token_limits'].get(intent_name, self.context_engine.max_tokens)
+        
         if intent.intent_type == IntentType.UNDERSTAND:
             # For questions, prioritize semantic similarity and current note
             return await self.context_engine.build_context_pyramid(
                 query=message,
                 current_note_path=current_note_path,
                 vault_files=vault_files,
-                max_tokens=self.context_engine.max_tokens,
+                max_tokens=max_tokens,
                 mentioned_files=mentioned_files,
                 mentioned_folders=mentioned_folders
             )
@@ -161,7 +170,7 @@ class CapabilityRouter:
                 query=message,
                 current_note_path=current_note_path, 
                 vault_files=vault_files,
-                max_tokens=int(self.context_engine.max_tokens * 1.2),  # Allow more context for discovery
+                max_tokens=max_tokens,
                 mentioned_files=mentioned_files,
                 mentioned_folders=mentioned_folders
             )
@@ -172,7 +181,7 @@ class CapabilityRouter:
                 query=message,
                 current_note_path=current_note_path,
                 vault_files=vault_files,
-                max_tokens=int(self.context_engine.max_tokens * 0.6),  # Less context, more focus on current
+                max_tokens=max_tokens,
                 mentioned_files=mentioned_files,
                 mentioned_folders=mentioned_folders
             )
@@ -183,7 +192,7 @@ class CapabilityRouter:
                 query=message,
                 current_note_path=current_note_path,
                 vault_files=vault_files,
-                max_tokens=int(self.context_engine.max_tokens * 1.5),  # Maximum context for pattern finding
+                max_tokens=max_tokens,
                 mentioned_files=mentioned_files,
                 mentioned_folders=mentioned_folders
             )
@@ -194,7 +203,7 @@ class CapabilityRouter:
                 query=message,
                 current_note_path=current_note_path,
                 vault_files=vault_files,
-                max_tokens=int(self.context_engine.max_tokens * 0.8),  # Moderate context for health checks
+                max_tokens=max_tokens,
                 mentioned_files=mentioned_files,
                 mentioned_folders=mentioned_folders
             )

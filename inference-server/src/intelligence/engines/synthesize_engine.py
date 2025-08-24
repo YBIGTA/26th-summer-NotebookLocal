@@ -40,15 +40,15 @@ class SynthesizeEngine(BaseEngine):
         try:
             # Route to specific synthesis capability
             if intent.sub_capability == 'summarize':
-                return await self._handle_summarize(message, context)
+                return await self._handle_summarize(message, context, intent)
             elif intent.sub_capability == 'analyze':
-                return await self._handle_analyze(message, context)
+                return await self._handle_analyze(message, context, intent)
             elif intent.sub_capability == 'compare':
-                return await self._handle_compare(message, context)
+                return await self._handle_compare(message, context, intent)
             elif intent.sub_capability == 'timeline':
-                return await self._handle_timeline(message, context)
+                return await self._handle_timeline(message, context, intent)
             else:
-                return await self._handle_general_synthesis(message, context)
+                return await self._handle_general_synthesis(message, context, intent)
                 
         except Exception as e:
             self.logger.error(f"Error in SynthesizeEngine: {e}")
@@ -61,40 +61,22 @@ class SynthesizeEngine(BaseEngine):
                 processing_time=time.time() - start_time
             )
     
-    async def _handle_summarize(self, message: str, context: ContextPyramid) -> EngineResponse:
+    async def _handle_summarize(self, message: str, context: ContextPyramid, intent: DetectedIntent = None) -> EngineResponse:
         """Handle summarization requests."""
         
-        system_prompt = """You are a synthesis specialist focused on creating clear, comprehensive summaries.
-
-Your job is to:
-1. Extract the most important points from multiple notes
-2. Organize information logically
-3. Identify key themes and takeaways
-4. Present a coherent synthesis that's more than just concatenation
-
-Always cite which specific notes contain each piece of information."""
-
         context_analysis = self._analyze_context_for_synthesis(context)
         context_text = self._format_context_simple(context)
         
-        user_prompt = f"""Create a synthesis summary based on my request: {message}
-
-Context analysis:
-- Notes span: {context_analysis['date_range']}
-- Content types: {', '.join(context_analysis['content_types'])}
-- Key topics: {', '.join(context_analysis['topics'])}
-
-Content to synthesize:
-{context_text}
-
-Provide a clear, organized summary with key insights and themes."""
-
-        response_text = await self._query_llm(
-            system_prompt=system_prompt,
-            user_message=user_prompt,
-            model_preference="claude-3-5-sonnet-20241022",
-            temperature=0.4,  # Balanced for synthesis
-            max_tokens=1000
+        response_text = await self._query_llm_with_templates(
+            sub_capability='summarize',
+            message=message,
+            context=context_text,
+            template_variables={
+                'date_range': context_analysis['date_range'],
+                'content_types': ', '.join(context_analysis['content_types']),
+                'key_topics': ', '.join(context_analysis['topics']),
+                'notes_count': len(context.items)
+            }
         )
         
         suggestions = [
@@ -115,34 +97,18 @@ Provide a clear, organized summary with key insights and themes."""
             processing_time=time.time() - time.time()
         )
     
-    async def _handle_analyze(self, message: str, context: ContextPyramid) -> EngineResponse:
+    async def _handle_analyze(self, message: str, context: ContextPyramid, intent: DetectedIntent = None) -> EngineResponse:
         """Handle pattern analysis requests."""
         
-        system_prompt = """You are a pattern analysis specialist. Your job is to:
-
-1. Identify recurring themes and patterns across multiple notes
-2. Spot trends and evolution of ideas over time  
-3. Highlight contradictions or inconsistencies
-4. Generate insights the user might not have explicitly noted
-5. Make connections between seemingly unrelated content
-
-Focus on finding meaningful patterns, not just listing topics."""
-
         context_text = self._format_context_simple(context)
         
-        user_prompt = f"""Analyze patterns and themes in my notes: {message}
-
-Content to analyze:
-{context_text}
-
-What patterns, themes, trends, and insights do you see across these notes?"""
-
-        response_text = await self._query_llm(
-            system_prompt=system_prompt,
-            user_message=user_prompt,
-            model_preference="claude-3-5-sonnet-20241022",
-            temperature=0.5,  # Higher creativity for pattern recognition
-            max_tokens=1000
+        response_text = await self._query_llm_with_templates(
+            sub_capability='analyze',
+            message=message,
+            context=context_text,
+            template_variables={
+                'notes_count': len(context.items)
+            }
         )
         
         suggestions = [
@@ -159,32 +125,15 @@ What patterns, themes, trends, and insights do you see across these notes?"""
             processing_time=time.time() - time.time()
         )
     
-    async def _handle_compare(self, message: str, context: ContextPyramid) -> EngineResponse:
+    async def _handle_compare(self, message: str, context: ContextPyramid, intent: DetectedIntent = None) -> EngineResponse:
         """Handle comparison requests."""
         
-        system_prompt = """You are a comparison specialist. Your job is to:
-
-1. Identify similarities and differences between concepts, approaches, or time periods
-2. Highlight evolution of thinking over time
-3. Show contradictions that need resolution
-4. Present balanced analysis of different perspectives
-
-Always cite specific notes when making comparisons."""
-
         context_text = self._format_context_simple(context)
         
-        user_prompt = f"""Compare and contrast based on my request: {message}
-
-Content to compare:
-{context_text}
-
-Provide a structured comparison highlighting similarities, differences, and evolution of ideas."""
-
-        response_text = await self._query_llm(
-            system_prompt=system_prompt,
-            user_message=user_prompt,
-            temperature=0.4,
-            max_tokens=1000
+        response_text = await self._query_llm_with_templates(
+            sub_capability='compare',
+            message=message,
+            context=context_text
         )
         
         return EngineResponse(
@@ -199,35 +148,20 @@ Provide a structured comparison highlighting similarities, differences, and evol
             processing_time=time.time() - time.time()
         )
     
-    async def _handle_timeline(self, message: str, context: ContextPyramid) -> EngineResponse:
+    async def _handle_timeline(self, message: str, context: ContextPyramid, intent: DetectedIntent = None) -> EngineResponse:
         """Handle timeline analysis requests."""
         
         # Sort context items by date for timeline analysis
         timeline_items = self._sort_context_by_date(context)
-        
-        system_prompt = """You are a timeline analysis specialist. Your job is to:
-
-1. Show evolution of ideas and decisions over time
-2. Identify key milestones and turning points
-3. Track progress and changes in thinking
-4. Highlight temporal patterns and cycles
-
-Present information chronologically with clear progression."""
-
         timeline_text = self._format_timeline_context(timeline_items)
         
-        user_prompt = f"""Create a timeline analysis based on: {message}
-
-Chronologically organized content:
-{timeline_text}
-
-Show the evolution and timeline of relevant information."""
-
-        response_text = await self._query_llm(
-            system_prompt=system_prompt,
-            user_message=user_prompt,
-            temperature=0.4,
-            max_tokens=1000
+        response_text = await self._query_llm_with_templates(
+            sub_capability='timeline',
+            message=message,
+            context=timeline_text,
+            template_variables={
+                'timeline_items_count': len(timeline_items)
+            }
         )
         
         return EngineResponse(
@@ -245,25 +179,15 @@ Show the evolution and timeline of relevant information."""
             processing_time=time.time() - time.time()
         )
     
-    async def _handle_general_synthesis(self, message: str, context: ContextPyramid) -> EngineResponse:
+    async def _handle_general_synthesis(self, message: str, context: ContextPyramid, intent: DetectedIntent = None) -> EngineResponse:
         """Handle general synthesis requests."""
         
-        system_prompt = """You are a knowledge synthesis specialist. Extract meaningful insights and patterns from multiple notes to help the user understand their knowledge better."""
-
         context_text = self._format_context_simple(context)
         
-        user_prompt = f"""Synthesize insights from my notes: {message}
-
-Content:
-{context_text}
-
-What insights, patterns, and synthesis can you provide?"""
-
-        response_text = await self._query_llm(
-            system_prompt=system_prompt,
-            user_message=user_prompt,
-            temperature=0.5,
-            max_tokens=1000
+        response_text = await self._query_llm_with_templates(
+            sub_capability='general',
+            message=message,
+            context=context_text
         )
         
         return EngineResponse(

@@ -36,26 +36,18 @@ class UnderstandEngine(BaseEngine):
         self.logger.info(f"🤔 Processing UNDERSTAND query: {intent.sub_capability}")
         
         try:
-            # Build specialized prompt based on sub-capability
-            system_prompt = self._build_system_prompt(intent.sub_capability)
-            
-            # Format context for LLM
+            # Format context for templates
             context_text = self._format_context_simple(context)
             
-            # Build user message with context
-            user_message = f"""Question: {message}
-
-{context_text}
-
-Please answer the question using ONLY the information provided in the context above. If the information is not available in the context, clearly state that."""
-
-            # Query LLM with appropriate model for understanding
-            response_text = await self._query_llm(
-                system_prompt=system_prompt,
-                user_message=user_message,
-                model_preference="claude-3-5-sonnet-20241022",  # Use stronger model for understanding
-                temperature=0.2,  # Low temperature for factual accuracy
-                max_tokens=800
+            # Use template-based prompts from PromptManager
+            response_text = await self._query_llm_with_templates(
+                sub_capability=intent.sub_capability,
+                message=message,
+                context=context_text,
+                template_variables={
+                    'context_items_count': len(context.items),
+                    'context_truncated': context.truncated
+                }
             )
             
             # Calculate confidence and extract sources
@@ -91,47 +83,6 @@ Please answer the question using ONLY the information provided in the context ab
                 processing_time=time.time() - start_time
             )
     
-    def _build_system_prompt(self, sub_capability: str) -> str:
-        """Build system prompt based on sub-capability."""
-        
-        base_prompt = """You are an intelligent assistant that helps users understand information from their Obsidian vault. 
-
-CRITICAL RULES:
-1. ONLY use information from the provided context
-2. NEVER invent or hallucinate information
-3. If information is not in the context, clearly state "I don't see information about [topic] in your notes"
-4. Always cite which specific notes contain the information
-5. Maintain the user's voice and terminology from their notes"""
-
-        sub_prompts = {
-            'question_answer': """
-Your specialty is answering direct questions factually and precisely. 
-- Give clear, direct answers
-- Quote relevant passages when helpful
-- Indicate certainty level if information is partial""",
-
-            'explanation': """
-Your specialty is explaining concepts and ideas from the user's notes.
-- Break down complex topics into understandable parts
-- Connect related concepts from different notes
-- Provide comprehensive explanations using multiple sources""",
-
-            'verification': """
-Your specialty is verifying information against the user's vault.
-- Check claims against note content
-- Identify contradictions between notes
-- Indicate confidence in verification results""",
-
-            'definition': """
-Your specialty is defining terms and concepts from the user's notes.
-- Provide clear definitions based on how the user uses terms
-- Include examples from their notes when available  
-- Note if a term is defined differently in different contexts"""
-        }
-        
-        specific_prompt = sub_prompts.get(sub_capability, sub_prompts['question_answer'])
-        
-        return base_prompt + specific_prompt
     
     def _format_context_simple(self, context: ContextPyramid) -> str:
         """Simple context formatting if ContextEngine method not available."""
