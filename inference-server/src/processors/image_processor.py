@@ -27,13 +27,8 @@ class ImageProcessor:
         if not self.router:
             raise Exception("Universal Router not available - cannot process images")
         
-        # Use a focused prompt for document image processing
-        focused_prompt = """Briefly describe the key information in this image. Focus on:
-- Text content (headings, labels, captions)
-- Data (numbers, values, statistics)
-- Main visual elements (charts, diagrams, tables)
-- Purpose/context of the image
-Keep it concise and factual. Maximum 2-3 sentences."""
+        # Ultra-concise prompt to minimize context usage
+        focused_prompt = """Summarize this image in 1-2 short sentences. Include only: key text, important numbers/data, and document type (chart/table/diagram/text). Be extremely brief."""
         
         descriptions = await self.router.vision(images, focused_prompt)
         logger.info(f"Universal Router vision processing completed: {len(descriptions)} descriptions")

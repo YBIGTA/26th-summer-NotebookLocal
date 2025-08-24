@@ -27,6 +27,21 @@ class FileManager:
     def __init__(self, db_manager: DatabaseManager = None):
         self.db = db_manager or db_manager
     
+    def get_file_by_id(self, file_id: str) -> Optional[VaultFile]:
+        """
+        Get vault file by its database ID.
+        
+        Args:
+            file_id: Database file ID
+            
+        Returns:
+            VaultFile instance or None if not found
+        """
+        with self.db.session() as session:
+            return session.query(VaultFile).filter(
+                VaultFile.file_id == file_id
+            ).first()
+    
     def get_file(self, path: str) -> Optional[VaultFile]:
         """
         Get single file by vault path.
@@ -40,13 +55,6 @@ class FileManager:
         with self.db.session() as session:
             return session.query(VaultFile).filter(
                 VaultFile.vault_path == path
-            ).first()
-    
-    def get_file_by_id(self, file_id: str) -> Optional[VaultFile]:
-        """Get file by UUID."""
-        with self.db.session() as session:
-            return session.query(VaultFile).filter(
-                VaultFile.file_id == file_id
             ).first()
     
     def get_files_by_status(self, status: str) -> List[VaultFile]:
@@ -191,15 +199,17 @@ class FileManager:
                      path: str, 
                      status: str, 
                      error_message: str = None,
-                     doc_uid: str = None) -> Optional[VaultFile]:
+                     doc_uid: str = None,
+                     processing_result: dict = None) -> Optional[VaultFile]:
         """
-        Update file processing status.
+        Update file processing status with enhanced tracking.
         
         Args:
             path: File path
             status: New processing status
             error_message: Error details (for 'error' status)
             doc_uid: Linked document ID (for 'processed' status)
+            processing_result: Dict with processing metrics (chunks_created, images_processed, etc.)
         """
         valid_statuses = ['unprocessed', 'queued', 'processing', 'processed', 'error']
         if status not in valid_statuses:
@@ -216,9 +226,33 @@ class FileManager:
             
             vault_file.processing_status = status
             
+            # Handle status-specific updates
+            if status == 'processing':
+                vault_file.processing_started_at = datetime.utcnow()
+                vault_file.processing_progress = 0
+                
+            elif status == 'processed':
+                vault_file.processing_completed_at = datetime.utcnow()
+                vault_file.processing_progress = 100
+                vault_file.error_message = None  # Clear any previous errors
+                
+                # Update processing results if provided
+                if processing_result:
+                    vault_file.chunks_created = processing_result.get('chunks_created')
+                    vault_file.images_processed = processing_result.get('images_processed')
+                    processing_time = processing_result.get('processing_time')
+                    if processing_time:
+                        vault_file.processing_time_seconds = int(processing_time)
+                
+            elif status == 'error':
+                vault_file.processing_completed_at = datetime.utcnow()
+                vault_file.processing_progress = 0
+                vault_file.retry_count = (vault_file.retry_count or 0) + 1
+                vault_file.last_error = error_message
+                
             if error_message:
                 vault_file.error_message = error_message
-            elif status != 'error':
+            elif status not in ['error', 'queued']:  # Don't clear errors for queued (retry) status
                 vault_file.error_message = None
                 
             if doc_uid:

@@ -12,7 +12,7 @@ import logging
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 
-from .context_engine_clean import ContextEngineClean, ContextPyramid
+from .context_engine import ContextEngine, ContextPyramid
 from .intent_detector import IntentDetector, DetectedIntent, IntentType
 from .engines.understand_engine import UnderstandEngine
 from .engines.navigate_engine import NavigateEngine
@@ -39,7 +39,7 @@ class CapabilityRouter:
     
     def __init__(
         self,
-        context_engine: ContextEngineClean,
+        context_engine: ContextEngine,
         intent_detector: IntentDetector,
         understand_engine: UnderstandEngine,
         navigate_engine: NavigateEngine,
@@ -69,6 +69,8 @@ class CapabilityRouter:
         message: str,
         current_note_path: Optional[str] = None,
         conversation_history: List[str] = None,
+        session_id: str = None,
+        max_tokens: int = None,
         vault_files: List[Any] = None,
         mentioned_files: List[str] = None,
         mentioned_folders: List[str] = None
@@ -93,7 +95,7 @@ class CapabilityRouter:
             
             # Step 2: Build context pyramid appropriate for this intent
             context_pyramid = await self._build_intent_specific_context(
-                detected_intent, message, current_note_path, vault_files, mentioned_files, mentioned_folders
+                detected_intent, message, current_note_path, vault_files, mentioned_files, mentioned_folders, max_tokens
             )
             
             # Step 3: Route to appropriate engine
@@ -145,12 +147,13 @@ class CapabilityRouter:
         current_note_path: Optional[str],
         vault_files: List[Any],
         mentioned_files: List[str] = None,
-        mentioned_folders: List[str] = None
+        mentioned_folders: List[str] = None,
+        max_tokens: int = None
     ) -> ContextPyramid:
         """Build context pyramid optimized for specific intent type."""
         
-        # Use context engine's own token calculation
-        max_tokens = None  # Let context engine calculate its own tokens
+        # Use passed max_tokens or let context engine calculate its own
+        # max_tokens = max_tokens (already passed from parameter)
         
         if intent.intent_type == IntentType.UNDERSTAND:
             # For questions, prioritize semantic similarity and current note

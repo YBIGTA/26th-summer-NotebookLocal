@@ -16,7 +16,7 @@ from ..database.file_manager import FileManager, file_manager
 from ..storage.hybrid_store import HybridStore
 from ..processors.embedder import Embedder
 from ..llm.core.router import LLMRouter
-from .context_engine_clean import ContextEngineClean
+from .context_engine import ContextEngine
 from .capability_router import CapabilityRouter
 from .intent_detector import IntentDetector
 from .engines.understand_engine import UnderstandEngine
@@ -52,14 +52,14 @@ class IntelligenceService:
         """Initialize all intelligence components with proper dependencies."""
         
         # Context engine with clean dependencies
-        self.context_engine = ContextEngineClean(
+        self.context_engine = ContextEngine(
             hybrid_store=self.store,
             embedder=self.embedder,
             file_manager=self.files
         )
         
         # Intent detector
-        self.intent_detector = IntentDetector()
+        self.intent_detector = IntentDetector(self.llm)
         
         # Capability engines
         self.understand_engine = UnderstandEngine(self.llm)

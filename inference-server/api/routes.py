@@ -22,6 +22,7 @@ from src.llm.models.requests import ChatRequest, Message
 # Import route modules
 from .vault_routes import router as vault_router
 from .intelligence_routes import router as intelligence_router
+from .document_routes import router as document_router
 
 
 def extract_chunk_content(raw_chunk: str) -> str:
@@ -537,3 +538,4 @@ async def debug_db_stats():
 # Include route modules in the main router
 router.include_router(vault_router)
 router.include_router(intelligence_router)
+router.include_router(document_router)

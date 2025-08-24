@@ -69,6 +69,17 @@ class VaultFile(Base):
     )
     doc_uid = Column(UUID(as_uuid=True), ForeignKey("documents.doc_uid", ondelete="SET NULL"), nullable=True)
     error_message = Column(Text, nullable=True)
+    
+    # Enhanced processing tracking fields
+    processing_started_at = Column(DateTime(timezone=True), nullable=True)
+    processing_completed_at = Column(DateTime(timezone=True), nullable=True)
+    retry_count = Column(Integer, default=0, nullable=False)
+    last_error = Column(Text, nullable=True)
+    processing_progress = Column(Integer, default=0, nullable=False)  # 0-100 percentage
+    chunks_created = Column(Integer, nullable=True)
+    images_processed = Column(Integer, nullable=True)
+    processing_time_seconds = Column(Integer, nullable=True)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
@@ -98,6 +109,17 @@ class VaultFile(Base):
             "processing_status": self.processing_status,
             "doc_uid": str(self.doc_uid) if self.doc_uid else None,
             "error_message": self.error_message,
+            
+            # Enhanced processing tracking fields
+            "processing_started_at": self.processing_started_at.isoformat() if self.processing_started_at else None,
+            "processing_completed_at": self.processing_completed_at.isoformat() if self.processing_completed_at else None,
+            "retry_count": self.retry_count,
+            "last_error": self.last_error,
+            "processing_progress": self.processing_progress,
+            "chunks_created": self.chunks_created,
+            "images_processed": self.images_processed,
+            "processing_time_seconds": self.processing_time_seconds,
+            
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }

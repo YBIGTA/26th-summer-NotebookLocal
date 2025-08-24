@@ -8,7 +8,7 @@ This module provides the core intelligence capabilities:
 - Five core engines: UNDERSTAND, NAVIGATE, TRANSFORM, SYNTHESIZE, MAINTAIN
 """
 
-from .context_engine_clean import ContextEngineClean as ContextEngine
+from .context_engine import ContextEngine
 from .intent_detector import IntentDetector
 from .capability_router import CapabilityRouter
 

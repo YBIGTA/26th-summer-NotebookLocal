@@ -60,6 +60,11 @@ def api_info():
             "intelligence_chat": "/api/v1/intelligence/chat",
             "intelligence_capabilities": "/api/v1/intelligence/capabilities",
             "obsidian_search": "/api/v1/obsidian/search",
-            "obsidian_documents": "/api/v1/obsidian/documents"
+            "obsidian_documents": "/api/v1/obsidian/documents",
+            "documents_upload_process": "/api/v1/documents/upload-and-process",
+            "documents_process_file": "/api/v1/documents/process-file",
+            "documents_process_vault": "/api/v1/documents/process-vault",
+            "documents_health": "/api/v1/documents/health",
+            "documents_stats": "/api/v1/documents/stats"
         }
     }

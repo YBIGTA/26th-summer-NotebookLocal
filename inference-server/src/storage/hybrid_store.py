@@ -377,10 +377,91 @@ class HybridStore:
         finally:
             db.close()
     
+    def search_with_document_expansion(
+        self,
+        query: str,
+        k: int = 12,
+        expansion_chunks: int = 3,
+        filters: Optional[Dict[str, Any]] = None,
+        alpha: float = 0.7
+    ) -> List[Dict[str, Any]]:
+        """
+        Enhanced search that retrieves additional chunks from the same documents
+        to provide better context continuity.
+        """
+        try:
+            # First, get initial search results
+            initial_results = self.search(query, k, filters, alpha)
+            
+            if not initial_results:
+                return []
+        except Exception as e:
+            logger.error(f"Error in document expansion search, falling back to regular search: {e}")
+            return self.search(query, k, filters, alpha)
+        
+        db = next(get_db())
+        try:
+            # Group results by document
+            doc_chunks = {}
+            for result in initial_results:
+                doc_path = result.get('document', {}).get('path', 'unknown')
+                if doc_path not in doc_chunks:
+                    doc_chunks[doc_path] = []
+                doc_chunks[doc_path].append(result)
+            
+            expanded_results = []
+            
+            # For each document with matches, get additional neighboring chunks
+            for doc_path, chunks in doc_chunks.items():
+                expanded_results.extend(chunks)  # Add original chunks
+                
+                # Get the document to find neighboring chunks
+                doc = db.query(Document).filter(Document.path == doc_path).first()
+                if doc and expansion_chunks > 0:
+                    # Get all chunks from this document, ordered by section/order_index
+                    all_doc_chunks = db.query(Chunk).filter(
+                        Chunk.doc_uid == doc.doc_uid
+                    ).order_by(Chunk.section, Chunk.order_index).all()
+                    
+                    # Find neighboring chunks for better context
+                    existing_chunk_ids = {c.get('chunk_id') for c in chunks if c.get('chunk_id')}
+                    
+                    for chunk_obj in all_doc_chunks:
+                        if str(chunk_obj.chunk_id) not in existing_chunk_ids:
+                            # Add neighboring chunk with lower relevance score
+                            expanded_results.append({
+                                'text': chunk_obj.text,
+                                'score': 0.5,  # Lower score for expansion chunks
+                                'chunk_id': str(chunk_obj.chunk_id),
+                                'document': {
+                                    'id': str(doc.doc_uid),
+                                    'path': doc.path,
+                                    'title': doc.title or doc.path
+                                },
+                                'section': chunk_obj.section,
+                                'order_index': chunk_obj.order_index,
+                                'is_expansion': True  # Mark as expansion chunk
+                            })
+                            
+                            if len([r for r in expanded_results if r.get('is_expansion')]) >= expansion_chunks:
+                                break
+            
+            # Sort by relevance score (original chunks first, then expansions)
+            expanded_results.sort(key=lambda x: (x.get('is_expansion', False), -x.get('score', 0)))
+            
+            logger.info(f"Expanded search: {len(initial_results)} initial → {len(expanded_results)} total chunks")
+            return expanded_results[:k + expansion_chunks]  # Limit total results
+            
+        except Exception as e:
+            logger.error(f"Error during document expansion processing: {e}")
+            return initial_results  # Return at least the initial results
+        finally:
+            db.close()
+    
     def search(
         self,
         query: str,
-        k: int = 4,
+        k: int = 12,  # Increased default from 4 to 12 for better coverage
         filters: Optional[Dict[str, Any]] = None,
         alpha: float = 0.7
     ) -> List[Dict[str, Any]]:

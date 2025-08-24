@@ -17,11 +17,8 @@ from typing import List, Dict, Set, Optional, Tuple
 from dataclasses import dataclass
 from threading import Lock
 from pathlib import Path
-from sqlalchemy.orm import Session
-from sqlalchemy import text, and_
-
-from ..database.connection import get_db
-from ..database.models import VaultFile, Document
+from ..database.file_manager import FileManager, file_manager
+from ..database.models import VaultFile
 
 logger = logging.getLogger(__name__)
 
@@ -44,15 +41,14 @@ class QueueStatus:
 class FileQueueManager:
     """Simple file queue manager with database synchronization and locking."""
     
-    def __init__(self):
+    def __init__(self, file_manager: FileManager = None):
         self._processing_lock = Lock()
         self._is_processing = False
         self._supported_extensions = {'.md', '.pdf', '.txt', '.docx'}
+        self.file_manager = file_manager or file_manager
         self._ignore_patterns = {'.obsidian', 'node_modules', '.git', '__pycache__'}
         
-    def _get_db(self) -> Session:
-        """Get database session - using next() to get single session."""
-        return next(get_db())
+# Removed old database connection method - now using FileManager
     
     def _calculate_content_hash(self, file_path: str) -> Optional[str]:
         """Calculate MD5 hash of file content."""
@@ -79,135 +75,47 @@ class FileQueueManager:
     
     async def scan_vault_directory(self, vault_path: str, force_rescan: bool = False) -> Dict[str, any]:
         """
-        Scan vault directory and update database with file changes.
+        Scan vault directory and update database with file changes using FileManager.
         
         Returns:
             Dictionary with scan results and change statistics
         """
-        if not os.path.exists(vault_path):
-            raise ValueError(f"Vault path does not exist: {vault_path}")
-            
-        vault_path = Path(vault_path)
-        changes = {
-            "new_files": [],
-            "modified_files": [],
-            "deleted_files": [],
-            "total_scanned": 0,
-            "errors": []
-        }
-        
-        db = self._get_db()
-        
         try:
             with self._processing_lock:
                 logger.info(f"🔍 Scanning vault directory: {vault_path}")
                 
-                # Get existing files from database
-                existing_files = {f.vault_path: f for f in db.query(VaultFile).all()}
-                current_files = set()
+                # Use FileManager's scan method - much cleaner!
+                scan_result = self.file_manager.scan_vault_directory(
+                    vault_root=vault_path,
+                    file_extensions=[ext for ext in self._supported_extensions]
+                )
                 
-                # Scan directory recursively
-                for file_path in vault_path.rglob('*'):
-                    if not file_path.is_file():
-                        continue
-                        
-                    if not self._should_process_file(file_path):
-                        continue
-                    
-                    relative_path = str(file_path.relative_to(vault_path))
-                    current_files.add(relative_path)
-                    changes["total_scanned"] += 1
-                    
-                    try:
-                        # Get file stats and hash
-                        stat = file_path.stat()
-                        modified_time = datetime.fromtimestamp(stat.st_mtime)
-                        file_size = stat.st_size
-                        content_hash = self._calculate_content_hash(str(file_path))
-                        
-                        if not content_hash:
-                            changes["errors"].append(f"Failed to hash {relative_path}")
-                            continue
-                            
-                        existing_file = existing_files.get(relative_path)
-                        
-                        if existing_file is None:
-                            # New file
-                            vault_file = VaultFile(
-                                vault_path=relative_path,
-                                file_type=file_path.suffix[1:].lower() if file_path.suffix else None,
-                                content_hash=content_hash,
-                                file_size=file_size,
-                                modified_at=modified_time,
-                                processing_status='unprocessed'
-                            )
-                            db.add(vault_file)
-                            changes["new_files"].append(relative_path)
-                            logger.info(f"➕ New file: {relative_path}")
-                            
-                        elif (existing_file.content_hash != content_hash or
-                              existing_file.modified_at != modified_time or
-                              force_rescan):
-                            # Modified file
-                            was_processed = existing_file.processing_status == 'processed'
-                            
-                            existing_file.content_hash = content_hash
-                            existing_file.file_size = file_size
-                            existing_file.modified_at = modified_time
-                            existing_file.updated_at = datetime.now()
-                            
-                            # Reset processing status if content changed
-                            if existing_file.content_hash != content_hash and was_processed:
-                                existing_file.processing_status = 'unprocessed'
-                                existing_file.error_message = None
-                                logger.info(f"🔄 Content changed, reset status: {relative_path}")
-                            
-                            changes["modified_files"].append(relative_path)
-                            
-                    except Exception as e:
-                        error_msg = f"Error processing file {relative_path}: {e}"
-                        logger.error(error_msg)
-                        changes["errors"].append(error_msg)
-                        continue
+                if 'error' in scan_result:
+                    raise Exception(scan_result['error'])
                 
-                # Find deleted files
-                for vault_path_str in existing_files.keys():
-                    if vault_path_str not in current_files:
-                        vault_file = existing_files[vault_path_str]
-                        
-                        # If file had associated document, we should clean that up too
-                        if vault_file.doc_uid:
-                            document = db.query(Document).filter(
-                                Document.doc_uid == vault_file.doc_uid
-                            ).first()
-                            if document:
-                                logger.info(f"🗑️ Cleaning up document for deleted file: {vault_path_str}")
-                                db.delete(document)
-                        
-                        db.delete(vault_file)
-                        changes["deleted_files"].append(vault_path_str)
-                        logger.info(f"🗑️ Deleted file: {vault_path_str}")
+                changes = {
+                    "new_files": scan_result.get('new_file_paths', []),
+                    "modified_files": scan_result.get('updated_file_paths', []),
+                    "deleted_files": scan_result.get('removed_file_paths', []),
+                    "total_scanned": scan_result.get('total_files', 0),
+                    "errors": []
+                }
                 
-                # Commit all changes
-                db.commit()
                 logger.info(f"✅ Scan completed: {changes['total_scanned']} files processed")
                 
+                return {
+                    "success": True,
+                    "message": f"Scan completed: {changes['total_scanned']} files processed",
+                    "changes": changes
+                }
+                
         except Exception as e:
-            db.rollback()
             logger.error(f"❌ Scan failed: {e}")
             raise
-        finally:
-            db.close()
-            
-        return {
-            "success": True,
-            "message": f"Scan completed: {changes['total_scanned']} files processed",
-            "changes": changes
-        }
     
     async def queue_files_for_processing(self, file_paths: List[str]) -> Dict[str, any]:
         """
-        Queue specific files for processing with database update.
+        Queue specific files for processing using FileManager.
         
         Args:
             file_paths: List of relative file paths to queue
@@ -222,16 +130,12 @@ class FileQueueManager:
             "not_found": []
         }
         
-        db = self._get_db()
-        
         try:
             with self._processing_lock:
                 logger.info(f"📋 Queueing {len(file_paths)} files for processing")
                 
                 for file_path in file_paths:
-                    vault_file = db.query(VaultFile).filter(
-                        VaultFile.vault_path == file_path
-                    ).first()
+                    vault_file = self.file_manager.get_file(file_path)
                     
                     if not vault_file:
                         result["not_found"].append(file_path)
@@ -241,157 +145,120 @@ class FileQueueManager:
                         result["already_queued"].append(file_path)
                         continue
                     
-                    # Update status to queued
-                    vault_file.processing_status = 'queued'
-                    vault_file.error_message = None
-                    vault_file.updated_at = datetime.now()
+                    # Update status to queued using FileManager
+                    updated_file = self.file_manager.update_status(
+                        path=file_path,
+                        status='queued'
+                    )
                     
-                    result["queued_files"].append(file_path)
-                    logger.info(f"📋 Queued: {file_path}")
+                    if updated_file:
+                        result["queued_files"].append(file_path)
+                        logger.info(f"📋 Queued: {file_path}")
+                    else:
+                        result["failed_files"].append(file_path)
                 
-                db.commit()
                 logger.info(f"✅ Queued {len(result['queued_files'])} files successfully")
                 
         except Exception as e:
-            db.rollback()
             logger.error(f"❌ Queue operation failed: {e}")
             raise
-        finally:
-            db.close()
             
         return result
     
     async def get_queue_status(self) -> QueueStatus:
-        """Get current queue processing status."""
-        db = self._get_db()
-        
+        """Get current queue processing status using FileManager."""
         try:
-            # Count files by status
-            status_counts = db.execute(text("""
-                SELECT processing_status, COUNT(*) as count
-                FROM vault_files 
-                GROUP BY processing_status
-            """)).fetchall()
+            total_queued = self.file_manager.get_file_count('queued')
+            processing = self.file_manager.get_file_count('processing')
+            failed = self.file_manager.get_file_count('error')
             
-            counts = {row[0]: row[1] for row in status_counts}
-            
-            # Count completed today
-            completed_today = db.execute(text("""
-                SELECT COUNT(*) 
-                FROM vault_files 
-                WHERE processing_status = 'processed' 
-                AND DATE(updated_at) = DATE(NOW())
-            """)).scalar() or 0
+            # TODO: Implement completed_today count in FileManager
+            # For now, use 0 as placeholder
+            completed_today = 0
             
             return QueueStatus(
-                total_queued=counts.get('queued', 0),
-                processing=counts.get('processing', 0),
+                total_queued=total_queued,
+                processing=processing,
                 completed_today=completed_today,
-                failed=counts.get('error', 0),
+                failed=failed,
                 is_processing=self._is_processing
             )
-            
-        finally:
-            db.close()
+        except Exception as e:
+            logger.error(f"Error getting queue status: {e}")
+            return QueueStatus(0, 0, 0, 0, False)
     
     async def get_queued_files(self, limit: int = 100) -> List[VaultFile]:
         """Get files that are queued for processing."""
-        db = self._get_db()
-        
         try:
-            files = db.query(VaultFile).filter(
-                VaultFile.processing_status == 'queued'
-            ).limit(limit).all()
-            
+            files = self.file_manager.list_files(
+                status='queued',
+                limit=limit
+            )
             return files
-            
-        finally:
-            db.close()
+        except Exception as e:
+            logger.error(f"Error getting queued files: {e}")
+            return []
     
     async def mark_file_processing(self, file_path: str) -> bool:
         """Mark a file as currently processing."""
-        db = self._get_db()
-        
         try:
-            vault_file = db.query(VaultFile).filter(
-                VaultFile.vault_path == file_path
-            ).first()
+            vault_file = self.file_manager.get_file(file_path)
             
             if not vault_file or vault_file.processing_status != 'queued':
                 return False
             
-            vault_file.processing_status = 'processing'
-            vault_file.updated_at = datetime.now()
-            db.commit()
+            updated_file = self.file_manager.update_status(
+                path=file_path,
+                status='processing'
+            )
             
-            logger.info(f"🔄 Processing: {file_path}")
-            return True
+            if updated_file:
+                logger.info(f"🔄 Processing: {file_path}")
+                return True
+            return False
             
         except Exception as e:
-            db.rollback()
             logger.error(f"Error marking file as processing: {e}")
             return False
-        finally:
-            db.close()
     
     async def mark_file_processed(self, file_path: str, doc_uid: Optional[str] = None) -> bool:
         """Mark a file as successfully processed."""
-        db = self._get_db()
-        
         try:
-            vault_file = db.query(VaultFile).filter(
-                VaultFile.vault_path == file_path
-            ).first()
+            updated_file = self.file_manager.update_status(
+                path=file_path,
+                status='processed',
+                doc_uid=doc_uid
+            )
             
-            if not vault_file:
-                return False
-            
-            vault_file.processing_status = 'processed'
-            vault_file.error_message = None
-            vault_file.updated_at = datetime.now()
-            
-            if doc_uid:
-                vault_file.doc_uid = doc_uid
-                
-            db.commit()
-            
-            logger.info(f"✅ Processed: {file_path}")
-            return True
+            if updated_file:
+                logger.info(f"✅ Processed: {file_path}")
+                return True
+            return False
             
         except Exception as e:
-            db.rollback()
             logger.error(f"Error marking file as processed: {e}")
             return False
-        finally:
-            db.close()
     
     async def mark_file_error(self, file_path: str, error_message: str) -> bool:
         """Mark a file as failed processing."""
-        db = self._get_db()
-        
         try:
-            vault_file = db.query(VaultFile).filter(
-                VaultFile.vault_path == file_path
-            ).first()
+            # Truncate long errors
+            truncated_error = error_message[:1000] if len(error_message) > 1000 else error_message
             
-            if not vault_file:
-                return False
+            updated_file = self.file_manager.update_status(
+                path=file_path,
+                status='error',
+                error_message=truncated_error
+            )
             
-            vault_file.processing_status = 'error'
-            vault_file.error_message = error_message[:1000]  # Truncate long errors
-            vault_file.updated_at = datetime.now()
-            
-            db.commit()
-            
-            logger.error(f"❌ Processing failed: {file_path} - {error_message}")
-            return True
+            if updated_file:
+                logger.error(f"❌ Processing failed: {file_path} - {error_message}")
+                return True
+            return False
             
         except Exception as e:
-            db.rollback()
             logger.error(f"Error marking file as error: {e}")
             return False
-        finally:
-            db.close()
     
     def is_processing(self) -> bool:
         """Check if queue manager is currently processing files."""
