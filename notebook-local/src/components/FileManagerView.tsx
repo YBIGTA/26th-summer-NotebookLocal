@@ -65,9 +65,8 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
   const [frequencyLimit, setFrequencyLimit] = useState(60); // Default 60 seconds
   const [isWatcherActive, setIsWatcherActive] = useState(false);
   
-  // Folder tracking state
-  const [trackedFolders, setTrackedFolders] = useState<Set<string>>(new Set());
-  const [showFolderTracking, setShowFolderTracking] = useState(false);
+  // Auto-processing state
+  const [autoProcessingActive, setAutoProcessingActive] = useState(false);
 
   // Simple file metadata cache
   const [fileMetadata, setFileMetadata] = useState<Map<string, any>>(new Map());
@@ -479,43 +478,26 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
     }
   };
 
-  // Folder tracking functions
-  const toggleFolderTracking = (folderPath: string) => {
-    setTrackedFolders(prev => {
-      const next = new Set(prev);
-      if (next.has(folderPath)) {
-        next.delete(folderPath);
-        console.log(`📁 Removed ${folderPath} from tracking`);
-      } else {
-        next.add(folderPath);
-        console.log(`📁 Added ${folderPath} to tracking`);
-      }
-      return next;
-    });
-  };
+  // Auto-processing functions
+  const enableAutoProcessing = async () => {
+    if (!apiClient) return;
 
-  const enableAutoProcessingForTrackedFolders = async () => {
-    if (!apiClient || trackedFolders.size === 0) return;
-
-    console.log(`🔄 Setting up auto-processing for ${trackedFolders.size} tracked folders`);
-    
     try {
-      // Start watcher for each tracked folder
-      for (const folderPath of Array.from(trackedFolders)) {
-        console.log(`📁 Enabling auto-processing for: ${folderPath}`);
-        
-        const response = await fetch(`${apiClient.getBaseUrl()}/api/v1/vault/watcher/start?vault_path=${encodeURIComponent(folderPath)}`, {
-          method: 'POST'
-        });
-        
-        if (response.ok) {
-          console.log(`✅ Auto-processing enabled for ${folderPath}`);
-        } else {
-          console.warn(`⚠️ Failed to enable auto-processing for ${folderPath}`);
-        }
-      }
+      // Start watcher for the entire vault with ignore patterns
+      const vaultAdapter = app.vault.adapter as any;
+      const vaultPath = vaultAdapter.basePath || vaultAdapter.path || (app.vault as any).name || 'vault';
       
-      setIsWatcherActive(true);
+      console.log('🔄 Enabling auto-processing for vault:', vaultPath);
+      
+      const response = await fetch(`${apiClient.getBaseUrl()}/api/v1/vault/watcher/start?vault_path=${encodeURIComponent(vaultPath)}`, {
+        method: 'POST'
+      });
+      
+      if (response.ok) {
+        setAutoProcessingActive(true);
+        setIsWatcherActive(true);
+        console.log('✅ Auto-processing enabled');
+      }
     } catch (error) {
       console.error('Error enabling auto-processing:', error);
     }
@@ -530,6 +512,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
       });
       
       if (response.ok) {
+        setAutoProcessingActive(false);
         setIsWatcherActive(false);
         console.log('🛑 Auto-processing disabled');
       }
@@ -548,7 +531,9 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
       
       if (response.ok) {
         const result = await response.json();
-        setIsWatcherActive(result.status?.is_watching || false);
+        const isActive = result.status?.is_watching || false;
+        setIsWatcherActive(isActive);
+        setAutoProcessingActive(isActive);
       }
     } catch (error) {
       console.error('Error checking watcher status:', error);
@@ -637,11 +622,10 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
       const folderFileCount = node.children ? node.children.filter(c => c.type === 'file').length : 0;
       const pendingCount = node.children ? 
         node.children.filter(c => c.type === 'file' && c.status === 'unprocessed').length : 0;
-      const isTracked = trackedFolders.has(node.path);
 
       return (
         <div key={node.id} className="mb-1">
-          <div className={`flex items-center p-2 hover:bg-gray-50 rounded ${indentClass} ${isTracked ? 'bg-blue-50 border-l-2 border-blue-400' : ''}`}>
+          <div className={`flex items-center p-2 hover:bg-gray-50 rounded ${indentClass}`}>
             <button 
               onClick={() => toggleFolderExpansion(node.path)}
               className="w-6 h-6 flex items-center justify-center mr-2 hover:bg-gray-200 rounded"
@@ -649,23 +633,9 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
               <span className="text-xs">{node.isExpanded ? '▼' : '▶'}</span>
             </button>
             
-            {/* Folder tracking checkbox */}
-            <button
-              onClick={() => toggleFolderTracking(node.path)}
-              className={`w-5 h-5 flex items-center justify-center mr-2 rounded border-2 text-xs ${
-                isTracked 
-                  ? 'bg-blue-500 border-blue-500 text-white' 
-                  : 'border-gray-300 hover:border-blue-400'
-              }`}
-              title={isTracked ? 'Remove from auto-tracking' : 'Add to auto-tracking'}
-            >
-              {isTracked ? '✓' : ''}
-            </button>
-            
             <span className="text-base mr-2">📁</span>
-            <span className={`flex-1 font-medium ${isTracked ? 'text-blue-700' : ''}`}>
+            <span className="flex-1 font-medium">
               {node.name}
-              {isTracked && <span className="ml-1 text-xs text-blue-600">(tracked)</span>}
             </span>
             
             <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -808,10 +778,10 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
             ⚙️ Settings
           </button>
           <button
-            onClick={() => setShowFolderTracking(!showFolderTracking)}
-            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+            onClick={autoProcessingActive ? disableAutoProcessing : enableAutoProcessing}
+            className={`px-4 py-2 rounded ${autoProcessingActive ? 'bg-green-500 hover:bg-green-600 text-white' : 'border border-gray-300 hover:bg-gray-50'}`}
           >
-            📁 Tracking ({trackedFolders.size})
+            {autoProcessingActive ? '🟢 Auto-Processing ON' : '⚪ Auto-Processing OFF'}
           </button>
         </div>
 
@@ -865,70 +835,18 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
           </div>
         )}
 
-        {/* Folder Tracking Panel */}
-        {showFolderTracking && (
-          <div className="mb-4 p-4 bg-blue-50 rounded border border-blue-200">
-            <h4 className="font-medium mb-3">📁 Folder Auto-Processing</h4>
-            
-            <div className="mb-3 text-sm text-gray-600">
-              Select folders to automatically process when files change. Click the checkbox next to folders below to add/remove them.
+        {/* Auto-Processing Status */}
+        {autoProcessingActive && (
+          <div className="mb-4 p-3 bg-green-50 rounded border border-green-200">
+            <div className="flex items-center gap-2">
+              <span className="text-green-600">🟢</span>
+              <span className="font-medium text-green-800">Auto-Processing Active</span>
             </div>
-            
-            {trackedFolders.size > 0 ? (
-              <div className="mb-3">
-                <div className="text-sm font-medium mb-2">Tracked Folders ({trackedFolders.size}):</div>
-                <div className="text-xs bg-white p-2 rounded border max-h-20 overflow-y-auto">
-                  {Array.from(trackedFolders).map(folder => (
-                    <div key={folder} className="flex items-center justify-between py-1">
-                      <span className="text-blue-700">📁 {folder}</span>
-                      <button
-                        onClick={() => toggleFolderTracking(folder)}
-                        className="text-red-500 hover:text-red-700 ml-2"
-                        title="Remove from tracking"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="mb-3 text-sm text-gray-500 italic">
-                No folders selected for tracking. Click the checkbox next to folders below to add them.
-              </div>
-            )}
-            
-            <div className="flex gap-2">
-              {trackedFolders.size > 0 && (
-                <>
-                  <button
-                    onClick={enableAutoProcessingForTrackedFolders}
-                    disabled={isWatcherActive}
-                    className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600 disabled:opacity-50"
-                  >
-                    {isWatcherActive ? 'Auto-Processing Active' : 'Enable Auto-Processing'}
-                  </button>
-                  {isWatcherActive && (
-                    <button
-                      onClick={disableAutoProcessing}
-                      className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
-                    >
-                      Disable Auto-Processing
-                    </button>
-                  )}
-                </>
-              )}
-              <button
-                onClick={() => setTrackedFolders(new Set())}
-                disabled={trackedFolders.size === 0}
-                className="px-3 py-1 bg-gray-500 text-white rounded text-sm hover:bg-gray-600 disabled:opacity-50"
-              >
-                Clear All
-              </button>
+            <div className="mt-1 text-sm text-green-700">
+              All files are automatically processed except those matching ignore patterns in plugin settings.
             </div>
-            
-            <div className="mt-2 text-xs text-gray-500">
-              💡 Auto-processing will monitor selected folders and automatically process new or modified files.
+            <div className="mt-2 text-xs text-green-600">
+              💡 Configure ignore patterns in Settings → Community plugins → NotebookLocal → Auto-processing ignore config
             </div>
           </div>
         )}

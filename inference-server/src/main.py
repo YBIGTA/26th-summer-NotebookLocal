@@ -6,7 +6,7 @@ from .database.init_db import init_database_on_startup
 from .llm.core.router import LLMRouter
 from .database.file_manager import file_manager
 from .vault.file_queue_manager import FileQueueManager
-from .services.document_processing_service import initialize_document_processing_service
+from .workflows.prefect_document_flows import initialize_prefect_document_processor
 import logging
 
 logger = logging.getLogger(__name__)
@@ -40,15 +40,20 @@ class LectureProcessor:
         
         self.document_workflow = DocumentWorkflow(self.store, self.embedder, router=self.router)
         
-        # Initialize DocumentProcessingService with all dependencies
+        # Initialize Prefect DocumentProcessor with all dependencies
         self.queue_manager = FileQueueManager(file_manager)
-        self.document_processing_service = initialize_document_processing_service(
+        self.prefect_processor = initialize_prefect_document_processor(
             document_workflow=self.document_workflow,
             file_manager=file_manager,
             queue_manager=self.queue_manager
         )
         
         # QA workflow removed - now handled by intelligence system
+
+    @property
+    def document_processing_service(self):
+        """Backward compatibility property."""
+        return self.prefect_processor
 
     async def process_document(self, pdf_path: str):
         return await self.document_workflow.run(pdf_path)

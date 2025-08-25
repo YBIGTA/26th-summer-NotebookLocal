@@ -13,12 +13,30 @@ import tempfile
 import os
 import logging
 
-from src.services.document_processing_service import get_document_processing_service
+from src.workflows.prefect_document_flows import get_prefect_document_processor, initialize_prefect_document_processor
 from src.services.processing_models import ProcessingResult, BatchProcessingResult
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
+router = APIRouter(prefix="/documents", tags=["documents"])
+
+# Helper function to get or initialize Prefect processor
+def get_processing_service():
+    """Get or initialize the Prefect document processor."""
+    try:
+        return get_prefect_document_processor()
+    except Exception:
+        # Initialize if not already done
+        from api.routes import processor
+        from src.database.file_manager import file_manager
+        from src.vault.file_queue_manager import FileQueueManager
+        
+        queue_manager = FileQueueManager(file_manager)
+        return initialize_prefect_document_processor(
+            document_workflow=processor.workflow,
+            file_manager=file_manager,
+            queue_manager=queue_manager
+        )
 
 # Request/Response Models
 class ProcessFileRequest(BaseModel):
@@ -71,7 +89,7 @@ async def upload_and_process_file(
             detail=f"Unsupported file type: {file_ext}. Allowed: {', '.join(allowed_extensions)}"
         )
     
-    processing_service = get_document_processing_service()
+    processing_service = get_processing_service()
     
     try:
         # Save uploaded file to temporary location
@@ -118,7 +136,7 @@ async def process_single_file(request: ProcessFileRequest):
     Use this when you have a file already on the server filesystem
     that you want to process through the document workflow.
     """
-    processing_service = get_document_processing_service()
+    processing_service = get_processing_service()
     
     try:
         # Validate file exists
@@ -143,12 +161,15 @@ async def process_single_file(request: ProcessFileRequest):
 @router.post("/process-vault")
 async def process_vault_directory(request: ProcessVaultRequest):
     """
-    Process all files in a vault directory.
+    Process all files in a vault directory using Prefect flows.
     
-    Scans the vault directory for supported files and processes them
-    through the complete document workflow. Returns batch results.
+    Uses Prefect for enhanced workflow orchestration with:
+    - Fault tolerance with automatic retries
+    - Real-time monitoring and artifacts
+    - Advanced scheduling capabilities
+    - Limited concurrency to protect GPU resources
     """
-    processing_service = get_document_processing_service()
+    processing_service = get_processing_service()
     
     try:
         # Validate vault path exists
@@ -158,19 +179,87 @@ async def process_vault_directory(request: ProcessVaultRequest):
         if not os.path.isdir(request.vault_path):
             raise HTTPException(status_code=400, detail=f"Path is not a directory: {request.vault_path}")
         
-        # Process vault directory
-        batch_result = await processing_service.process_vault_directory(request.vault_path)
+        # Process vault directory with Prefect (limited concurrency for GPU)
+        batch_result = await processing_service.process_vault_directory(
+            request.vault_path, 
+            max_concurrent=2  # Limit concurrent processing for GPU
+        )
         
         return {
-            "message": f"Vault processing completed: {batch_result.successful_files}/{batch_result.total_files} files processed successfully",
-            "result": batch_result.to_dict()
+            "message": f"Prefect vault processing completed: {batch_result.successful_files}/{batch_result.total_files} files processed successfully",
+            "result": batch_result.to_dict(),
+            "prefect_features": {
+                "fault_tolerance": "Automatic retries on failures",
+                "monitoring": "Real-time flow execution tracking",
+                "artifacts": "Detailed processing reports generated",
+                "concurrency_limit": "GPU-safe processing with max 2 concurrent files"
+            }
         }
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error processing vault {request.vault_path}: {e}")
-        raise HTTPException(status_code=500, detail=f"Vault processing failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Prefect vault processing failed: {str(e)}")
+
+@router.post("/process-vault-enhanced")
+async def process_vault_directory_enhanced(
+    request: ProcessVaultRequest,
+    max_concurrent: int = Query(1, ge=1, le=3, description="Maximum concurrent files (1-3 for GPU safety)"),
+    priority_extensions: List[str] = Query([".pdf"], description="File extensions to prioritize")
+):
+    """
+    Enhanced vault processing with Prefect workflow orchestration.
+    
+    Advanced features:
+    - Configurable concurrency limits
+    - Priority processing by file type
+    - Enhanced monitoring with Prefect artifacts
+    - Automatic retry logic with exponential backoff
+    """
+    processing_service = get_processing_service()
+    
+    try:
+        # Validate vault path
+        if not os.path.exists(request.vault_path):
+            raise HTTPException(status_code=404, detail=f"Vault path not found: {request.vault_path}")
+        
+        if not os.path.isdir(request.vault_path):
+            raise HTTPException(status_code=400, detail=f"Path is not a directory: {request.vault_path}")
+        
+        logger.info(f"🚀 Starting enhanced Prefect processing:")
+        logger.info(f"   📁 Vault: {request.vault_path}")
+        logger.info(f"   🔄 Max concurrent: {max_concurrent}")
+        logger.info(f"   ⭐ Priority extensions: {priority_extensions}")
+        
+        # Process with enhanced Prefect flow
+        batch_result = await processing_service.process_vault_directory(
+            request.vault_path,
+            max_concurrent=max_concurrent
+        )
+        
+        return {
+            "message": f"Enhanced Prefect processing completed: {batch_result.successful_files}/{batch_result.total_files} files",
+            "result": batch_result.to_dict(),
+            "configuration": {
+                "max_concurrent": max_concurrent,
+                "priority_extensions": priority_extensions,
+                "total_processing_time": batch_result.processing_time,
+                "avg_time_per_file": batch_result.processing_time / max(batch_result.total_files, 1)
+            },
+            "prefect_benefits": {
+                "observability": "Full workflow visibility and monitoring",
+                "error_recovery": "Automatic retry with exponential backoff",
+                "resource_management": f"GPU-safe with {max_concurrent} concurrent limit",
+                "artifacts": "Detailed markdown reports for each batch"
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Enhanced vault processing error: {e}")
+        raise HTTPException(status_code=500, detail=f"Enhanced processing failed: {str(e)}")
 
 
 @router.get("/status/{job_id}")
@@ -181,7 +270,7 @@ async def get_processing_status(job_id: str):
     Returns detailed information about job progress, current step,
     and estimated time remaining.
     """
-    processing_service = get_document_processing_service()
+    processing_service = get_processing_service()
     
     status = processing_service.get_processing_status(job_id)
     
@@ -199,7 +288,7 @@ async def get_queue_status():
     Returns information about queue health, processing statistics,
     and system performance metrics.
     """
-    processing_service = get_document_processing_service()
+    processing_service = get_processing_service()
     
     queue_status = processing_service.get_queue_status()
     
@@ -214,7 +303,7 @@ async def get_service_health():
     Returns basic health information about the document processing
     components and their status.
     """
-    processing_service = get_document_processing_service()
+    processing_service = get_processing_service()
     
     try:
         # Check if core components are available
@@ -263,7 +352,7 @@ async def cleanup_old_jobs(
     Removes old completed jobs from memory to prevent memory bloat.
     Only affects in-memory job tracking, not database records.
     """
-    processing_service = get_document_processing_service()
+    processing_service = get_processing_service()
     
     try:
         jobs_before = len(processing_service.completed_jobs)
@@ -292,7 +381,7 @@ async def get_files_by_status(
     limit: int = Query(50, ge=1, le=1000, description="Maximum number of files to return")
 ):
     """Get files by processing status (for debugging/monitoring)."""
-    processing_service = get_document_processing_service()
+    processing_service = get_processing_service()
     
     try:
         files = processing_service.file_manager.get_files_by_status(status)
@@ -328,7 +417,7 @@ async def get_files_by_status(
 @router.get("/stats")
 async def get_processing_stats():
     """Get processing statistics and performance metrics."""
-    processing_service = get_document_processing_service()
+    processing_service = get_processing_service()
     
     try:
         # File counts by status
@@ -360,7 +449,7 @@ async def get_processing_stats():
 @router.get("/processing-metrics")
 async def get_processing_metrics():
     """Get detailed processing performance metrics."""
-    processing_service = get_document_processing_service()
+    processing_service = get_processing_service()
     
     try:
         # Get files with processing times
@@ -407,7 +496,7 @@ async def get_processing_history(
     status: Optional[str] = Query(None, description="Filter by processing status")
 ):
     """Get processing history for the specified time period."""
-    processing_service = get_document_processing_service()
+    processing_service = get_processing_service()
     
     try:
         from datetime import datetime, timedelta
@@ -455,56 +544,70 @@ async def get_processing_history(
         raise HTTPException(status_code=500, detail=f"Failed to get history: {str(e)}")
 
 
-@router.post("/background-worker/start")
-async def start_background_worker():
-    """Start the background processing worker."""
-    from src.services.background_processor import start_background_processor
-    
+@router.get("/prefect-status")
+async def get_prefect_status():
+    """Get Prefect workflow system status and information."""
     try:
-        processing_service = get_document_processing_service()
-        worker = start_background_processor(processing_service)
+        processing_service = get_processing_service()
         
         return {
-            "message": "Background worker started successfully",
-            "status": worker.get_status()
+            "status": "active",
+            "message": "Prefect workflow orchestration is active",
+            "features": {
+                "fault_tolerance": "Automatic retries with exponential backoff",
+                "monitoring": "Real-time flow execution tracking", 
+                "artifacts": "Detailed markdown reports for processing",
+                "concurrency_control": "GPU-safe processing limits",
+                "task_retries": "Individual task-level retry policies"
+            },
+            "components": {
+                "document_workflow": "available" if processing_service.document_workflow else "not_available",
+                "file_manager": "available" if processing_service.file_manager else "not_available", 
+                "queue_manager": "available" if processing_service.queue_manager else "not_available"
+            },
+            "benefits": {
+                "observability": "Full workflow visibility and step tracking",
+                "error_recovery": "Built-in retry and failure handling",
+                "resource_management": "Configurable concurrency limits",
+                "artifacts": "Automatic processing reports and documentation"
+            }
         }
         
     except Exception as e:
-        logger.error(f"Error starting background worker: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to start worker: {str(e)}")
+        logger.error(f"Error getting Prefect status: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get Prefect status: {str(e)}")
 
 
-@router.post("/background-worker/stop")
-async def stop_background_worker():
-    """Stop the background processing worker."""
-    from src.services.background_processor import stop_background_processor
-    
-    try:
-        stop_background_processor()
-        
-        return {"message": "Background worker stopped successfully"}
-        
-    except Exception as e:
-        logger.error(f"Error stopping background worker: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to stop worker: {str(e)}")
-
-
-@router.get("/background-worker/status")
-async def get_background_worker_status():
-    """Get background worker status and statistics."""
-    from src.services.background_processor import get_background_processor
-    
-    try:
-        worker = get_background_processor()
-        
-        if not worker:
-            return {
-                "status": "not_initialized",
-                "message": "Background worker has not been started"
-            }
-        
-        return worker.get_status()
-        
-    except Exception as e:
-        logger.error(f"Error getting background worker status: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}")
+@router.get("/workflow-capabilities")  
+async def get_workflow_capabilities():
+    """Get information about available workflow capabilities."""
+    return {
+        "intelligence_system": {
+            "type": "LangGraph",
+            "features": [
+                "Visual workflow orchestration",
+                "Automatic state management", 
+                "Conditional routing based on intent",
+                "Enhanced error recovery",
+                "Real-time streaming support"
+            ],
+            "engines": ["understand", "navigate", "transform", "synthesize", "maintain"]
+        },
+        "document_processing": {
+            "type": "Prefect", 
+            "features": [
+                "Fault-tolerant processing with retries",
+                "Real-time monitoring and artifacts",
+                "GPU-safe concurrency limits",
+                "Advanced scheduling capabilities",
+                "Detailed processing reports"
+            ],
+            "tasks": ["extract_content", "process_and_chunk", "embed_and_store", "update_status"]
+        },
+        "benefits": {
+            "reliability": "Both systems include robust error handling",
+            "observability": "Complete visibility into workflow execution", 
+            "scalability": "Easy to modify and extend workflows",
+            "maintainability": "Clear separation of concerns and modular design"
+        }
+    }

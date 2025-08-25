@@ -14,6 +14,10 @@ export interface CopilotSettings {
   enableAutoComplete: boolean;
   enableStreaming: boolean;
   
+  // Auto-processing configuration
+  autoProcessingIgnoreConfig: string;
+  frequencyLimit: number;
+  
   // Debug
   debug: boolean;
 }
@@ -25,6 +29,27 @@ export const DEFAULT_SETTINGS: CopilotSettings = {
   defaultChatWidth: 400,
   enableAutoComplete: true,
   enableStreaming: true,
+  autoProcessingIgnoreConfig: `# Auto-processing ignore patterns (like .gitignore)
+# Files/folders matching these patterns will NOT be processed
+# Lines starting with # are comments
+# Use / for folders, no / for files  
+# Supports glob patterns like *.tmp, **/*.log
+
+# Common ignores
+.obsidian/
+temp/
+drafts/
+*.tmp
+*.log
+node_modules/
+
+# Personal files
+personal/
+private/
+
+# Use ! for exceptions (process even if parent is ignored)
+# !important-personal.md`,
+  frequencyLimit: 60,
   debug: false,
 };
 

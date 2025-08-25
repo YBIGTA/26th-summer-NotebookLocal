@@ -3,6 +3,7 @@ import { App, PluginSettingTab } from "obsidian";
 import { createRoot, Root } from "react-dom/client";
 import React from "react";
 import { StreamingSettings } from "./StreamingSettings";
+import { AutoProcessingSettings } from "./AutoProcessingSettings";
 import NotebookLocalPlugin from "../main";
 
 export class NotebookLocalSettingTab extends PluginSettingTab {
@@ -46,6 +47,9 @@ export class NotebookLocalSettingTab extends PluginSettingTab {
     this.root.render(
       <div>
         <StreamingSettings 
+          onSettingsChange={() => this.handleSettingsChange()}
+        />
+        <AutoProcessingSettings 
           onSettingsChange={() => this.handleSettingsChange()}
         />
       </div>

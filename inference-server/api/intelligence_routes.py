@@ -13,7 +13,7 @@ from typing import Dict, List, Any, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
-from src.intelligence.intelligence_service import IntelligenceService, intelligence_service
+from src.workflows.intelligence_workflow import IntelligenceWorkflow, initialize_intelligence_workflow
 from src.database.file_manager import FileManager, file_manager
 
 logger = logging.getLogger(__name__)
@@ -45,46 +45,49 @@ class CapabilityInfoResponse(BaseModel):
     total_engines: int
     context_engine: Dict[str, Any]
 
-# Global intelligence service instance
-_intelligence_service = None
+# Global intelligence workflow instance
+_intelligence_workflow = None
 
-# Dependency to get intelligence service
-async def get_intelligence_service() -> IntelligenceService:
-    """Initialize and return intelligence service with clean dependencies."""
+# Dependency to get intelligence workflow
+async def get_intelligence_workflow() -> IntelligenceWorkflow:
+    """Initialize and return LangGraph intelligence workflow."""
     
-    global _intelligence_service
+    global _intelligence_workflow
     
-    if _intelligence_service is not None:
-        return _intelligence_service
+    if _intelligence_workflow is not None:
+        return _intelligence_workflow
     
     try:
         # Get configured components from main processor
         from api.routes import processor
         
-        # Initialize intelligence service with existing components
-        _intelligence_service = IntelligenceService(
+        # Initialize LangGraph intelligence workflow
+        _intelligence_workflow = initialize_intelligence_workflow(
             file_manager=file_manager,
             hybrid_store=processor.store,
             embedder=processor.embedder,
             llm_router=None  # Will use default singleton
         )
         
-        logger.info("✅ IntelligenceService initialized with clean dependencies")
-        return _intelligence_service
+        logger.info("✅ LangGraph IntelligenceWorkflow initialized")
+        return _intelligence_workflow
         
     except Exception as e:
-        logger.error(f"Failed to initialize intelligence service: {e}")
-        raise HTTPException(status_code=500, detail=f"Intelligence system initialization failed: {str(e)}")
+        logger.error(f"Failed to initialize intelligence workflow: {e}")
+        raise HTTPException(status_code=500, detail=f"Intelligence workflow initialization failed: {str(e)}")
 
 @router.post("/chat", response_model=IntelligenceResponse)
 async def intelligent_chat(
     request: IntelligenceRequest,
-    service: IntelligenceService = Depends(get_intelligence_service)
+    workflow: IntelligenceWorkflow = Depends(get_intelligence_workflow)
 ):
     """
-    Main intelligence endpoint - processes natural language with full context awareness.
+    Main intelligence endpoint - processes natural language with LangGraph workflow.
     
-    This replaces the need for manual commands. Users can just talk naturally:
+    Uses LangGraph for visual workflow orchestration, automatic state management,
+    conditional routing, and enhanced error recovery.
+    
+    Natural language processing:
     - "What did I conclude about X?" → UNDERSTAND
     - "Find my notes about Y" → NAVIGATE  
     - "Make this clearer" → TRANSFORM
@@ -93,10 +96,10 @@ async def intelligent_chat(
     """
     
     try:
-        logger.info(f"🧠 Intelligence request: '{request.message[:50]}...'")
+        logger.info(f"🧠 LangGraph Intelligence request: '{request.message[:50]}...'")
         
-        # Process message using clean intelligence service
-        response_dict = await service.process_intelligent_message(
+        # Process message using LangGraph workflow
+        response_dict = await workflow.process_message(
             message=request.message,
             current_note_path=request.current_note_path,
             conversation_history=request.conversation_history,
@@ -119,15 +122,46 @@ async def intelligent_chat(
         )
         
     except Exception as e:
-        logger.error(f"Intelligence chat error: {e}")
+        logger.error(f"LangGraph intelligence chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/capabilities", response_model=CapabilityInfoResponse)
-async def get_capabilities(service: IntelligenceService = Depends(get_intelligence_service)):
+async def get_capabilities(workflow: IntelligenceWorkflow = Depends(get_intelligence_workflow)):
     """Get information about available intelligence capabilities."""
     
     try:
-        capabilities = service.get_capabilities()
+        capabilities = {
+            'engines': {
+                'understand': {
+                    'description': 'Answer questions using vault content',
+                    'sub_capabilities': ['question_answer', 'explanation', 'verification']
+                },
+                'navigate': {
+                    'description': 'Find connections and navigate knowledge',
+                    'sub_capabilities': ['find_connections', 'discovery', 'exploration']
+                },
+                'transform': {
+                    'description': 'Edit and restructure content',
+                    'sub_capabilities': ['rewrite', 'restructure', 'format', 'split', 'merge']
+                },
+                'synthesize': {
+                    'description': 'Extract patterns and generate insights',
+                    'sub_capabilities': ['pattern_analysis', 'insight_generation', 'contradiction_detection']
+                },
+                'maintain': {
+                    'description': 'Vault health and organization',
+                    'sub_capabilities': ['health_check', 'fix_links', 'organize', 'find_duplicates']
+                }
+            },
+            'features': {
+                'context_building': True,
+                'intent_detection': True,
+                'multi_file_processing': True,
+                'semantic_search': True,
+                'conversation_history': True,
+                'langgraph_workflow': True
+            }
+        }
         
         return CapabilityInfoResponse(
             capabilities=capabilities['engines'],
@@ -142,18 +176,24 @@ async def get_capabilities(service: IntelligenceService = Depends(get_intelligen
 @router.post("/intent/detect")
 async def detect_intent(
     request: IntelligenceRequest,
-    service: IntelligenceService = Depends(get_intelligence_service)
+    workflow: IntelligenceWorkflow = Depends(get_intelligence_workflow)
 ):
     """Detect intent from natural language message (useful for UI hints)."""
     
     try:
-        intent_result = await service.detect_intent(
+        intent_result = await workflow.intent_detector.detect_intent(
             message=request.message,
             current_note_path=request.current_note_path,
-            conversation_history=request.conversation_history
+            conversation_history=request.conversation_history or []
         )
         
-        return intent_result
+        return {
+            'intent_type': intent_result.intent_type.value,
+            'confidence': intent_result.confidence,
+            'sub_capability': intent_result.sub_capability,
+            'parameters': intent_result.parameters,
+            'reasoning': intent_result.reasoning
+        }
         
     except Exception as e:
         logger.error(f"Intent detection error: {e}")
@@ -164,16 +204,35 @@ async def build_context(
     query: str,
     current_note_path: Optional[str] = None,
     max_tokens: Optional[int] = None,
-    service: IntelligenceService = Depends(get_intelligence_service)
+    workflow: IntelligenceWorkflow = Depends(get_intelligence_workflow)
 ):
     """Build context pyramid for a query (useful for debugging and preview)."""
     
     try:
-        context_preview = await service.build_context_preview(
+        pyramid = await workflow.context_engine.build_context_pyramid(
             query=query,
             current_note_path=current_note_path,
             max_tokens=max_tokens
         )
+        
+        context_preview = {
+            'query': pyramid.query,
+            'current_note_path': pyramid.current_note_path,
+            'total_items': len(pyramid.items),
+            'total_tokens': pyramid.total_tokens,
+            'truncated': pyramid.truncated,
+            'items': [
+                {
+                    'source_path': item.source_path,
+                    'relevance_score': item.relevance_score,
+                    'context_type': item.context_type,
+                    'token_count': item.token_count,
+                    'content_preview': item.content[:100] + '...' if len(item.content) > 100 else item.content
+                }
+                for item in pyramid.items
+            ],
+            'built_at': pyramid.built_at.isoformat()
+        }
         
         return context_preview
         

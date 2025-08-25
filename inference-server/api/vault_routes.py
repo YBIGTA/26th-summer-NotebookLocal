@@ -27,10 +27,18 @@ from src.vault.file_queue_manager import FileQueueManager, QueueStatus
 from src.vault.file_watcher import get_file_watcher, start_global_watcher, stop_global_watcher
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/v1/vault", tags=["vault"])
+router = APIRouter(prefix="/vault", tags=["vault"])
 
-# Global queue manager instance
-queue_manager = FileQueueManager()
+# Global queue manager instance - lazily initialized
+queue_manager = None
+
+def get_queue_manager():
+    """Get or create the global queue manager with proper dependencies."""
+    global queue_manager
+    if queue_manager is None:
+        from src.database.file_manager import file_manager
+        queue_manager = FileQueueManager(file_manager)
+    return queue_manager
 
 # Request/Response Models
 class VaultFileResponse(BaseModel):
@@ -120,7 +128,7 @@ async def scan_vault_changes(
     """Scan vault directory for file changes using enhanced queue manager"""
     
     try:
-        result = await queue_manager.scan_vault_directory(
+        result = await get_queue_manager().scan_vault_directory(
             vault_path=request.vault_path,
             force_rescan=request.force_rescan
         )
@@ -139,7 +147,7 @@ async def process_vault_files(
     """Queue files for processing using enhanced queue manager"""
     
     try:
-        result = await queue_manager.queue_files_for_processing(request.file_paths)
+        result = await get_queue_manager().queue_files_for_processing(request.file_paths)
         
         return {
             "message": f"Queued {len(result['queued_files'])} files for processing",
@@ -173,7 +181,7 @@ async def remove_from_queue(
     
     try:
         # Use queue manager for thread-safe operations
-        result = await queue_manager.queue_files_for_processing([])  # Empty to trigger validation
+        result = await get_queue_manager().queue_files_for_processing([])  # Empty to trigger validation
         
         # Manual removal (queue manager doesn't have remove method, so direct DB update)
         vault_file.processing_status = 'unprocessed'
@@ -192,7 +200,7 @@ async def get_vault_status():
     """Get processing status summary using enhanced queue manager"""
     
     try:
-        queue_status = await queue_manager.get_queue_status()
+        queue_status = await get_queue_manager().get_queue_status()
         
         # Get additional stats from database
         db = next(get_db())
@@ -330,7 +338,7 @@ async def get_queue_status():
     """Get detailed queue processing status"""
     
     try:
-        status = await queue_manager.get_queue_status()
+        status = await get_queue_manager().get_queue_status()
         return {
             "success": True,
             "status": {
@@ -351,7 +359,7 @@ async def get_queued_files(
     """Get files currently in the processing queue"""
     
     try:
-        files = await queue_manager.get_queued_files(limit)
+        files = await get_queue_manager().get_queued_files(limit)
         
         return {
             "success": True,
@@ -378,7 +386,7 @@ async def process_next_file():
     """Process the next file in queue (for processing workers)"""
     
     try:
-        files = await queue_manager.get_queued_files(1)
+        files = await get_queue_manager().get_queued_files(1)
         
         if not files:
             return {
@@ -390,7 +398,7 @@ async def process_next_file():
         file = files[0]
         
         # Mark as processing
-        success = await queue_manager.mark_file_processing(file.vault_path)
+        success = await get_queue_manager().mark_file_processing(file.vault_path)
         
         if success:
             return {
@@ -420,7 +428,7 @@ async def mark_file_processed(
     """Mark a file as successfully processed"""
     
     try:
-        success = await queue_manager.mark_file_processed(file_path, doc_uid)
+        success = await get_queue_manager().mark_file_processed(file_path, doc_uid)
         
         if success:
             return {
@@ -444,7 +452,7 @@ async def mark_file_error(
     """Mark a file as failed processing"""
     
     try:
-        success = await queue_manager.mark_file_error(file_path, error_message)
+        success = await get_queue_manager().mark_file_error(file_path, error_message)
         
         if success:
             return {

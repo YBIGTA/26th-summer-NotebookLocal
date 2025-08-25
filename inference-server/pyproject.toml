@@ -33,6 +33,9 @@ dependencies = [
     "langchain-anthropic>=0.1.0",
     "langgraph",
     
+    # Workflow orchestration
+    "prefect>=3.0.0",
+    
     # Document processing
     "pdfplumber",
     "PyPDF2",
