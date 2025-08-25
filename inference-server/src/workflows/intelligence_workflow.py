@@ -94,7 +94,8 @@ class IntelligenceWorkflow:
     
     def _initialize_components(self):
         """Initialize intelligence components."""
-        self.context_engine = ContextEngine(
+        from ..intelligence.context_engine import get_context_engine
+        self.context_engine = get_context_engine(
             hybrid_store=self.hybrid_store,
             embedder=self.embedder,
             file_manager=self.file_manager
@@ -272,11 +273,20 @@ class IntelligenceWorkflow:
             # Build context for engine
             pyramid = await self._rebuild_pyramid_from_state(state)
             
+            # Convert intent_result to DetectedIntent object
+            from ..intelligence.intent_detector import DetectedIntent, IntentType
+            intent = DetectedIntent(
+                intent_type=IntentType(state.intent_result['intent_type']),
+                confidence=state.intent_result['confidence'],
+                sub_capability=state.intent_result['sub_capability'],
+                parameters=state.intent_result['parameters'],
+                reasoning=state.intent_result['reasoning']
+            )
+            
             response = await self.understand_engine.process(
                 message=state.message,
-                context_pyramid=pyramid,
-                intent=state.intent_result,
-                session_id=state.session_id
+                intent=intent,
+                context=pyramid
             )
             
             state.engine_response = {
@@ -304,11 +314,20 @@ class IntelligenceWorkflow:
         try:
             pyramid = await self._rebuild_pyramid_from_state(state)
             
+            # Convert intent_result to DetectedIntent object
+            from ..intelligence.intent_detector import DetectedIntent, IntentType
+            intent = DetectedIntent(
+                intent_type=IntentType(state.intent_result['intent_type']),
+                confidence=state.intent_result['confidence'],
+                sub_capability=state.intent_result['sub_capability'],
+                parameters=state.intent_result['parameters'],
+                reasoning=state.intent_result['reasoning']
+            )
+            
             response = await self.navigate_engine.process(
                 message=state.message,
-                context_pyramid=pyramid,
-                intent=state.intent_result,
-                session_id=state.session_id
+                intent=intent,
+                context=pyramid
             )
             
             state.engine_response = {
@@ -542,15 +561,15 @@ class IntelligenceWorkflow:
             # Execute workflow
             final_state = await self.workflow.ainvoke(initial_state)
             
-            # Convert to API response format
+            # Convert to API response format - handle both dict and object access
             return {
-                'content': final_state.content,
-                'sources': final_state.sources,
-                'confidence': final_state.confidence,
-                'intent_type': final_state.intent_type,
-                'sub_capability': final_state.sub_capability,
-                'metadata': final_state.metadata,
-                'suggested_actions': final_state.suggested_actions,
+                'content': final_state.get('content') if hasattr(final_state, 'get') else getattr(final_state, 'content', ''),
+                'sources': final_state.get('sources') if hasattr(final_state, 'get') else getattr(final_state, 'sources', []),
+                'confidence': final_state.get('confidence') if hasattr(final_state, 'get') else getattr(final_state, 'confidence', 0.0),
+                'intent_type': final_state.get('intent_type') if hasattr(final_state, 'get') else getattr(final_state, 'intent_type', 'unknown'),
+                'sub_capability': final_state.get('sub_capability') if hasattr(final_state, 'get') else getattr(final_state, 'sub_capability', 'unknown'),
+                'metadata': final_state.get('metadata') if hasattr(final_state, 'get') else getattr(final_state, 'metadata', {}),
+                'suggested_actions': final_state.get('suggested_actions') if hasattr(final_state, 'get') else getattr(final_state, 'suggested_actions', []),
                 'session_id': session_id
             }
             

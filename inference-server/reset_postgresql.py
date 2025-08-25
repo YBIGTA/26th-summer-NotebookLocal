@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent / "src"))
 
 from src.database.connection import engine, Base
-from src.database.models import Document, Chunk  # Import to register models
+from src.database.models import Document, Chunk, VaultFile  # Import to register models
 from src.database.init_db import init_database_on_startup, test_connection
 from sqlalchemy import text
 
@@ -26,8 +26,9 @@ def drop_all_tables():
         logger.info("🗑️  Dropping all existing tables...")
         
         with engine.connect() as conn:
-            # Drop tables in correct order (chunks first due to foreign key)
+            # Drop tables in correct order (chunks first due to foreign key constraints)
             conn.execute(text("DROP TABLE IF EXISTS chunks CASCADE"))
+            conn.execute(text("DROP TABLE IF EXISTS vault_files CASCADE"))
             conn.execute(text("DROP TABLE IF EXISTS documents CASCADE"))
             conn.commit()
             
@@ -98,11 +99,29 @@ def show_current_schema():
                     else:
                         logger.info(f"     {column_name}: {data_type}")
             
+            # Check vault_files table structure
+            if 'vault_files' in tables:
+                result = conn.execute(text("""
+                    SELECT column_name, data_type 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'vault_files' 
+                    AND table_schema = 'public'
+                    ORDER BY ordinal_position
+                """))
+                
+                logger.info("Vault files table columns:")
+                for row in result:
+                    column_name, data_type = row
+                    if column_name in ['processing_started_at', 'processing_completed_at']:
+                        logger.info(f"  📌 {column_name}: {data_type}")
+                    else:
+                        logger.info(f"     {column_name}: {data_type}")
+            
             # Check indexes
             result = conn.execute(text("""
                 SELECT indexname, indexdef 
                 FROM pg_indexes 
-                WHERE tablename IN ('documents', 'chunks')
+                WHERE tablename IN ('documents', 'chunks', 'vault_files')
                 ORDER BY tablename, indexname
             """))
             

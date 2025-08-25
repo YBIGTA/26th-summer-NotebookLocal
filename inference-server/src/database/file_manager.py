@@ -15,7 +15,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from pathlib import Path
 
-from .manager import DatabaseManager, db_manager
+from .manager import DatabaseManager, db_manager as global_db_manager
 from .models import VaultFile, Document
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,8 @@ class FileManager:
     """Manage vault file operations with clean, consistent interface."""
     
     def __init__(self, db_manager: DatabaseManager = None):
-        self.db = db_manager or db_manager
+        self.db = db_manager if db_manager is not None else global_db_manager
+        logger.info(f"FileManager initialized with db_manager: {self.db is not None}")
     
     def get_file_by_id(self, file_id: str) -> Optional[VaultFile]:
         """
@@ -52,6 +53,10 @@ class FileManager:
         Returns:
             VaultFile instance or None if not found
         """
+        if self.db is None:
+            logger.error("FileManager database manager is None")
+            return None
+        
         with self.db.session() as session:
             return session.query(VaultFile).filter(
                 VaultFile.vault_path == path

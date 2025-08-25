@@ -63,7 +63,7 @@ async def get_intelligence_workflow() -> IntelligenceWorkflow:
         
         # Initialize LangGraph intelligence workflow
         _intelligence_workflow = initialize_intelligence_workflow(
-            file_manager=file_manager,
+            file_manager=file_manager,  # Use the imported global file_manager
             hybrid_store=processor.store,
             embedder=processor.embedder,
             llm_router=None  # Will use default singleton
@@ -241,4 +241,4 @@ async def build_context(
         raise HTTPException(status_code=500, detail=str(e))
 
 # Helper functions
-# All helper functions removed - using clean IntelligenceService and FileManager now
+# All helper functions removed - using clean IntelligenceWorkflow and FileManager now

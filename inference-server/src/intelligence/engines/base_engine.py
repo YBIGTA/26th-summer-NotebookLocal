@@ -31,6 +31,11 @@ class EngineResponse:
     metadata: Dict[str, Any]
     suggested_actions: List[str]
     processing_time: float
+    sources: List[str] = None
+    
+    def __post_init__(self):
+        if self.sources is None:
+            self.sources = []
 
 class BaseEngine:
     """Base class for all capability engines."""

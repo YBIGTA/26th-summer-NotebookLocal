@@ -290,9 +290,22 @@ async def get_queue_status():
     """
     processing_service = get_processing_service()
     
-    queue_status = processing_service.get_queue_status()
-    
-    return queue_status.to_dict()
+    # Handle both old and new processors
+    if hasattr(processing_service, 'get_queue_status'):
+        queue_status = processing_service.get_queue_status()
+        return queue_status.to_dict()
+    else:
+        # Fallback for PrefectDocumentProcessor
+        from src.services.processing_models import QueueStatus
+        fallback_status = QueueStatus(
+            total_queued=processing_service.file_manager.get_file_count('queued'),
+            processing=processing_service.file_manager.get_file_count('processing'), 
+            completed_today=0,  # Prefect doesn't track daily stats yet
+            failed_today=processing_service.file_manager.get_file_count('error'),
+            worker_active=True,  # Assume active if service exists
+            average_processing_time=0.0
+        )
+        return fallback_status.to_dict()
 
 
 @router.get("/health")
@@ -312,7 +325,19 @@ async def get_service_health():
         has_queue_manager = processing_service.queue_manager is not None
         
         # Get queue status for additional health info
-        queue_status = processing_service.get_queue_status()
+        if hasattr(processing_service, 'get_queue_status'):
+            queue_status = processing_service.get_queue_status()
+        else:
+            # Fallback for PrefectDocumentProcessor
+            from src.services.processing_models import QueueStatus
+            queue_status = QueueStatus(
+                total_queued=processing_service.file_manager.get_file_count('queued'),
+                processing=processing_service.file_manager.get_file_count('processing'), 
+                completed_today=0,
+                failed_today=processing_service.file_manager.get_file_count('error'),
+                worker_active=True,
+                average_processing_time=0.0
+            )
         
         overall_health = "healthy" if (has_workflow and has_file_manager and has_queue_manager) else "unhealthy"
         
@@ -329,8 +354,9 @@ async def get_service_health():
                 "worker_active": queue_status.worker_active
             },
             "service_info": {
-                "active_jobs": len(processing_service.active_jobs),
-                "completed_jobs": len(processing_service.completed_jobs)
+                "active_jobs": getattr(processing_service, 'active_jobs', []) and len(processing_service.active_jobs) or 0,
+                "completed_jobs": getattr(processing_service, 'completed_jobs', []) and len(processing_service.completed_jobs) or 0,
+                "processor_type": processing_service.__class__.__name__
             }
         }
         
@@ -427,12 +453,25 @@ async def get_processing_stats():
         
         # Job stats
         job_stats = {
-            "active_jobs": len(processing_service.active_jobs),
-            "completed_jobs": len(processing_service.completed_jobs)
+            "active_jobs": len(getattr(processing_service, 'active_jobs', [])),
+            "completed_jobs": len(getattr(processing_service, 'completed_jobs', [])),
+            "processor_type": processing_service.__class__.__name__
         }
         
         # Queue status
-        queue_status = processing_service.get_queue_status()
+        if hasattr(processing_service, 'get_queue_status'):
+            queue_status = processing_service.get_queue_status()
+        else:
+            # Fallback for PrefectDocumentProcessor
+            from src.services.processing_models import QueueStatus
+            queue_status = QueueStatus(
+                total_queued=processing_service.file_manager.get_file_count('queued'),
+                processing=processing_service.file_manager.get_file_count('processing'), 
+                completed_today=0,
+                failed_today=processing_service.file_manager.get_file_count('error'),
+                worker_active=True,
+                average_processing_time=0.0
+            )
         
         return {
             "file_stats": file_stats,

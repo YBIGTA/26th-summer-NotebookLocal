@@ -13,8 +13,6 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 from prefect import flow, task, get_run_logger
-from prefect.task_runners import SequentialTaskRunner
-from prefect.blocks.system import Secret
 from prefect.artifacts import create_markdown_artifact
 
 from ..workflows.document_workflow import DocumentWorkflow
@@ -306,7 +304,6 @@ def update_file_manager_status(
     name="process_single_document",
     description="Process a single document with fault tolerance and monitoring",
     version="1.0",
-    task_runner=SequentialTaskRunner(),
     log_prints=True
 )
 async def process_single_document_flow(
@@ -478,7 +475,6 @@ async def process_single_document_flow(
     name="process_vault_directory",
     description="Batch process all files in a vault directory",
     version="1.0",
-    task_runner=SequentialTaskRunner(),
     log_prints=True
 )
 async def process_vault_directory_flow(

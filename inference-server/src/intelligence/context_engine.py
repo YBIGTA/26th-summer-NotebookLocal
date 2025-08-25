@@ -334,5 +334,18 @@ class ContextEngine:
         return [item.source_path for item in pyramid.items]
 
 
-# Create a clean global instance
-context_engine = ContextEngine(None, None, global_file_manager)
+# Global context engine instance - initialized lazily when needed
+context_engine = None
+
+def get_context_engine(hybrid_store: HybridStore = None, embedder: Embedder = None, file_manager: FileManager = None) -> ContextEngine:
+    """Get or create the global context engine instance with proper dependencies."""
+    global context_engine
+    
+    if context_engine is None:
+        context_engine = ContextEngine(
+            hybrid_store=hybrid_store,
+            embedder=embedder, 
+            file_manager=file_manager or global_file_manager
+        )
+    
+    return context_engine

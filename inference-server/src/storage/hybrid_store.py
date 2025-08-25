@@ -447,7 +447,16 @@ class HybridStore:
                                 break
             
             # Sort by relevance score (original chunks first, then expansions)
-            expanded_results.sort(key=lambda x: (x.get('is_expansion', False), -x.get('score', 0)))
+            def get_sort_score(x):
+                score = x.get('score', 0)
+                if isinstance(score, str):
+                    try:
+                        score = float(score)
+                    except (ValueError, TypeError):
+                        score = 0.0
+                return (x.get('is_expansion', False), -score)
+            
+            expanded_results.sort(key=get_sort_score)
             
             logger.info(f"Expanded search: {len(initial_results)} initial → {len(expanded_results)} total chunks")
             return expanded_results[:k + expansion_chunks]  # Limit total results
