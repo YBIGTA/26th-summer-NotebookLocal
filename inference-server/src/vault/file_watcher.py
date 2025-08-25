@@ -102,7 +102,7 @@ class VaultFileHandler(FileSystemEventHandler):
 
 class FileWatcher:
     """
-    File system watcher for vault directory with debouncing and queue integration.
+    File system watcher for vault directory with debouncing and smart frequency limiting.
     """
     
     def __init__(self, vault_path: str, queue_manager: FileQueueManager = None):
@@ -119,6 +119,11 @@ class FileWatcher:
         self.pending_events: Dict[str, FileChangeEvent] = {}
         self.debounce_timers: Dict[str, float] = {}
         
+        # Frequency limiting settings
+        self.frequency_limit = 60.0  # seconds between processing same file
+        self.last_processed: Dict[str, float] = {}  # file_path -> timestamp
+        self.processing_disabled_files: Set[str] = set()  # temporarily disabled files
+        
         # Processing
         self.event_queue = asyncio.Queue()
         self.processing_task = None
@@ -127,6 +132,53 @@ class FileWatcher:
     def set_change_callback(self, callback: Callable[[FileChangeEvent], None]):
         """Set callback function to be called on file changes."""
         self.on_change_callback = callback
+    
+    def set_frequency_limit(self, seconds: float):
+        """Set the frequency limit for processing same file (in seconds)."""
+        self.frequency_limit = seconds
+        logger.info(f"⏰ Frequency limit set to {seconds} seconds")
+    
+    def can_process_file(self, file_path: str) -> bool:
+        """Check if file can be processed based on frequency limiting."""
+        if file_path in self.processing_disabled_files:
+            return False
+            
+        if file_path not in self.last_processed:
+            return True  # Never processed before
+            
+        time_since_last = time.time() - self.last_processed[file_path]
+        return time_since_last >= self.frequency_limit
+    
+    def get_wait_time(self, file_path: str) -> float:
+        """Get remaining wait time before file can be processed again."""
+        if file_path not in self.last_processed:
+            return 0.0
+            
+        time_since_last = time.time() - self.last_processed[file_path]
+        remaining = self.frequency_limit - time_since_last
+        return max(0.0, remaining)
+    
+    def mark_file_processed(self, file_path: str):
+        """Mark file as processed with current timestamp."""
+        self.last_processed[file_path] = time.time()
+        logger.debug(f"⏰ Marked file as processed: {file_path}")
+    
+    def force_process_file(self, file_path: str):
+        """Force processing of a file, bypassing frequency limits."""
+        if file_path in self.processing_disabled_files:
+            self.processing_disabled_files.remove(file_path)
+        # Don't update last_processed here - let the actual processing do that
+        logger.info(f"🚀 Force processing enabled for: {file_path}")
+    
+    def disable_file_processing(self, file_path: str):
+        """Temporarily disable automatic processing for a file."""
+        self.processing_disabled_files.add(file_path)
+        logger.info(f"⏸️ Automatic processing disabled for: {file_path}")
+    
+    def enable_file_processing(self, file_path: str):
+        """Re-enable automatic processing for a file."""
+        self.processing_disabled_files.discard(file_path)
+        logger.info(f"▶️ Automatic processing enabled for: {file_path}")
     
     def queue_change_event(self, event: FileChangeEvent):
         """Queue a file change event for debounced processing."""
@@ -162,18 +214,25 @@ class FileWatcher:
                 await asyncio.sleep(0.1)
     
     async def _handle_change_event(self, event: FileChangeEvent):
-        """Handle a debounced file change event."""
+        """Handle a debounced file change event with frequency limiting."""
         try:
             relative_path = str(Path(event.file_path).relative_to(self.vault_path))
             
+            # Always handle deletions and moves regardless of frequency limits
             if event.event_type == 'deleted':
                 await self._handle_file_deleted(relative_path)
             elif event.event_type == 'moved':
                 await self._handle_file_moved(event)
             else:  # created or modified
-                await self._handle_file_changed(relative_path, event.file_path)
+                # Check frequency limit for file changes
+                if self.can_process_file(event.file_path):
+                    await self._handle_file_changed(relative_path, event.file_path)
+                    self.mark_file_processed(event.file_path)
+                else:
+                    wait_time = self.get_wait_time(event.file_path)
+                    logger.info(f"⏰ Skipping frequent change for {relative_path} (wait {wait_time:.0f}s)")
             
-            # Call user callback if set
+            # Call user callback if set (always call, regardless of processing)
             if self.on_change_callback:
                 self.on_change_callback(event)
                 
@@ -272,12 +331,30 @@ class FileWatcher:
             logger.error(f"❌ Error stopping file watcher: {e}")
     
     def get_status(self) -> Dict[str, any]:
-        """Get current watcher status."""
+        """Get current watcher status with frequency limiting info."""
+        current_time = time.time()
+        
+        # Calculate files in cooldown
+        files_in_cooldown = []
+        for file_path, last_time in self.last_processed.items():
+            wait_time = self.frequency_limit - (current_time - last_time)
+            if wait_time > 0:
+                relative_path = str(Path(file_path).relative_to(self.vault_path))
+                files_in_cooldown.append({
+                    "file": relative_path,
+                    "wait_seconds": int(wait_time)
+                })
+        
         return {
             "is_watching": self.is_watching,
             "vault_path": str(self.vault_path),
             "pending_events": len(self.pending_events),
-            "debounce_delay": self.debounce_delay
+            "debounce_delay": self.debounce_delay,
+            "frequency_limit": self.frequency_limit,
+            "files_processed": len(self.last_processed),
+            "files_in_cooldown": len(files_in_cooldown),
+            "cooldown_details": files_in_cooldown[:10],  # Show max 10 for brevity
+            "disabled_files": len(self.processing_disabled_files)
         }
     
     def __enter__(self):

@@ -516,6 +516,7 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
           <div style={{ height: '100%', overflow: 'hidden' }}>
             <FileManagerView
               onFileSelect={handleFileSelect}
+              apiClient={apiClient}
             />
           </div>
         )}

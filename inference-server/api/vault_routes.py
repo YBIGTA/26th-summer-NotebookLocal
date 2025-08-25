@@ -48,6 +48,9 @@ class VaultFileResponse(BaseModel):
 
 class VaultScanRequest(BaseModel):
     vault_path: str
+
+class WatcherConfigRequest(BaseModel):
+    frequency_limit_seconds: float
     force_rescan: bool = False
 
 class VaultProcessRequest(BaseModel):
@@ -517,3 +520,103 @@ async def get_watcher_status():
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get watcher status: {str(e)}")
+
+# New frequency limiting configuration endpoints
+@router.post("/watcher/config")
+async def configure_watcher(request: WatcherConfigRequest):
+    """Configure file watcher frequency limiting settings"""
+    try:
+        watcher = get_file_watcher()
+        
+        if not watcher:
+            raise HTTPException(status_code=404, detail="File watcher not initialized")
+        
+        # Update frequency limit
+        watcher.set_frequency_limit(request.frequency_limit_seconds)
+        
+        return {
+            "success": True,
+            "message": f"Frequency limit updated to {request.frequency_limit_seconds} seconds",
+            "frequency_limit": request.frequency_limit_seconds
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to configure watcher: {str(e)}")
+
+@router.post("/watcher/force-process")
+async def force_process_file(request: dict):
+    """Force processing of a file, bypassing frequency limits"""
+    try:
+        file_path = request.get("file_path")
+        if not file_path:
+            raise HTTPException(status_code=400, detail="file_path is required")
+        
+        watcher = get_file_watcher()
+        if not watcher:
+            raise HTTPException(status_code=404, detail="File watcher not initialized")
+        
+        # Force enable processing for this file
+        watcher.force_process_file(file_path)
+        
+        return {
+            "success": True,
+            "message": f"File {file_path} enabled for force processing",
+            "file_path": file_path
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to force process file: {str(e)}")
+
+@router.post("/watcher/disable-file")
+async def disable_file_processing(request: dict):
+    """Temporarily disable automatic processing for a file"""
+    try:
+        file_path = request.get("file_path")
+        if not file_path:
+            raise HTTPException(status_code=400, detail="file_path is required")
+        
+        watcher = get_file_watcher()
+        if not watcher:
+            raise HTTPException(status_code=404, detail="File watcher not initialized")
+        
+        watcher.disable_file_processing(file_path)
+        
+        return {
+            "success": True,
+            "message": f"Automatic processing disabled for {file_path}",
+            "file_path": file_path
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to disable file processing: {str(e)}")
+
+@router.post("/watcher/enable-file")
+async def enable_file_processing(request: dict):
+    """Re-enable automatic processing for a file"""
+    try:
+        file_path = request.get("file_path")
+        if not file_path:
+            raise HTTPException(status_code=400, detail="file_path is required")
+        
+        watcher = get_file_watcher()
+        if not watcher:
+            raise HTTPException(status_code=404, detail="File watcher not initialized")
+        
+        watcher.enable_file_processing(file_path)
+        
+        return {
+            "success": True,
+            "message": f"Automatic processing enabled for {file_path}",
+            "file_path": file_path
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to enable file processing: {str(e)}")
