@@ -35,7 +35,7 @@ interface FileNode {
 interface FileManagerViewProps {
   onFileSelect?: (file: TFile) => void;
   onFolderSelect?: (folder: TFolder) => void;
-  apiClient?: ApiClient;
+  apiClient: ApiClient;
   className?: string;
 }
 
@@ -64,6 +64,10 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
   const [showSettings, setShowSettings] = useState(false);
   const [frequencyLimit, setFrequencyLimit] = useState(60); // Default 60 seconds
   const [isWatcherActive, setIsWatcherActive] = useState(false);
+  
+  // Folder tracking state
+  const [trackedFolders, setTrackedFolders] = useState<Set<string>>(new Set());
+  const [showFolderTracking, setShowFolderTracking] = useState(false);
 
   // Simple file metadata cache
   const [fileMetadata, setFileMetadata] = useState<Map<string, any>>(new Map());
@@ -113,7 +117,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
       if (apiClient) {
         try {
           // Load processing stats from new DocumentProcessingService
-          const statsResponse = await fetch(`${apiClient.baseURL}/api/v1/documents/stats`);
+          const statsResponse = await fetch(`${apiClient.getBaseUrl()}/api/v1/documents/stats`);
           if (statsResponse.ok) {
             const data = await statsResponse.json();
             setProcessingStats({
@@ -130,7 +134,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
 
         try {
           // Load file watcher status for frequency limiting info
-          const watcherResponse = await fetch(`${apiClient.baseURL}/api/v1/vault/watcher/status`);
+          const watcherResponse = await fetch(`${apiClient.getBaseUrl()}/api/v1/vault/watcher/status`);
           if (watcherResponse.ok) {
             const watcherData = await watcherResponse.json();
             const waitTimes = new Map<string, number>();
@@ -173,14 +177,15 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
 
     try {
       // Trigger a vault scan to sync file changes
-      const vaultPath = app.vault.adapter.path;
+      const vaultAdapter = app.vault.adapter as any;
+      const vaultPath = vaultAdapter.basePath || vaultAdapter.path || (app.vault as any).name || 'vault';
       if (!vaultPath) {
         console.warn('Cannot get vault path for sync');
         return;
       }
 
       console.log('Syncing with backend, vault path:', vaultPath);
-      const response = await fetch(`${apiClient.baseURL}/api/v1/vault/scan`, {
+      const response = await fetch(`${apiClient.getBaseUrl()}/api/v1/vault/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -205,16 +210,16 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
     try {
       // Try to get stats from backend first if API client is available
       if (apiClient) {
-        const response = await fetch(`${apiClient.baseURL}/api/v1/vault/status`);
+        const response = await fetch(`${apiClient.getBaseUrl()}/api/v1/vault/status`);
         
         if (response.ok) {
           const backendStats = await response.json();
           setProcessingStats({
             total: backendStats.total_files,
             processed: backendStats.processed,
-            queued: backendStats.queued,
-            unprocessed: backendStats.unprocessed,
-            error: backendStats.error
+            processing: backendStats.processing || 0,
+            pending: backendStats.unprocessed,
+            errors: backendStats.error
           });
           return; // Use backend stats if available
         }
@@ -364,17 +369,25 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
       console.warn('API client not available');
       return;
     }
+    
+    console.log('🔄 Processing file:', filePath);
 
     try {
       setIsProcessing(true);
-      const response = await fetch(`${apiClient.baseURL}/api/v1/documents/process-file`, {
+      const response = await fetch(`${apiClient.getBaseUrl()}/api/v1/documents/process-file`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ file_path: filePath })
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to process file: ${response.statusText}`);
+        const errorText = await response.text();
+        console.error('❌ File processing failed:', response.status, response.statusText);
+        console.error('❌ Error details:', errorText);
+        throw new Error(`Failed to process file: ${response.statusText} - ${errorText}`);
+      } else {
+        const result = await response.json();
+        console.log('✅ File processing successful:', result);
       }
 
       // Refresh to show updated status
@@ -391,17 +404,25 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
       console.warn('API client not available');
       return;
     }
+    
+    console.log('📁 Processing folder:', folderPath);
 
     try {
       setIsProcessing(true);
-      const response = await fetch(`${apiClient.baseURL}/api/v1/documents/process-vault`, {
+      const response = await fetch(`${apiClient.getBaseUrl()}/api/v1/documents/process-vault`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ vault_path: folderPath })
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to process folder: ${response.statusText}`);
+        const errorText = await response.text();
+        console.error('❌ Folder processing failed:', response.status, response.statusText);
+        console.error('❌ Error details:', errorText);
+        throw new Error(`Failed to process folder: ${response.statusText} - ${errorText}`);
+      } else {
+        const result = await response.json();
+        console.log('✅ Folder processing successful:', result);
       }
 
       // Refresh to show updated status
@@ -414,7 +435,8 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
   };
 
   const processAllPending = async () => {
-    const vaultPath = app.vault.adapter.path;
+    const vaultAdapter = app.vault.adapter as any;
+    const vaultPath = vaultAdapter.basePath || vaultAdapter.path || (app.vault as any).name || 'vault';
     await processFolder(vaultPath);
   };
 
@@ -423,7 +445,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
 
     try {
       // First, force process the file in the watcher (bypass frequency limit)
-      await fetch(`${apiClient.baseURL}/api/v1/vault/watcher/force-process`, {
+      await fetch(`${apiClient.getBaseUrl()}/api/v1/vault/watcher/force-process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ file_path: filePath })
@@ -440,7 +462,7 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
     if (!apiClient) return;
 
     try {
-      const response = await fetch(`${apiClient.baseURL}/api/v1/vault/watcher/config`, {
+      const response = await fetch(`${apiClient.getBaseUrl()}/api/v1/vault/watcher/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ frequency_limit_seconds: seconds })
@@ -457,47 +479,72 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
     }
   };
 
-  // Batch processing functions removed - using individual processing buttons instead
-
-  const toggleFileWatcher = async () => {
-    if (!apiClient) {
-      console.warn('API client not available for file watcher');
-      return;
-    }
-
-    try {
-      if (isWatcherActive) {
-        // Stop file watcher
-        const response = await fetch(`${apiClient.baseURL}/api/v1/vault/watcher/stop`, {
-          method: 'POST'
-        });
-        
-        if (response.ok) {
-          setIsWatcherActive(false);
-          console.log('File watcher stopped');
-        }
+  // Folder tracking functions
+  const toggleFolderTracking = (folderPath: string) => {
+    setTrackedFolders(prev => {
+      const next = new Set(prev);
+      if (next.has(folderPath)) {
+        next.delete(folderPath);
+        console.log(`📁 Removed ${folderPath} from tracking`);
       } else {
-        // Start file watcher
-        const vaultPath = app.vault.adapter.path;
-        const response = await fetch(`${apiClient.baseURL}/api/v1/vault/watcher/start?vault_path=${encodeURIComponent(vaultPath)}`, {
+        next.add(folderPath);
+        console.log(`📁 Added ${folderPath} to tracking`);
+      }
+      return next;
+    });
+  };
+
+  const enableAutoProcessingForTrackedFolders = async () => {
+    if (!apiClient || trackedFolders.size === 0) return;
+
+    console.log(`🔄 Setting up auto-processing for ${trackedFolders.size} tracked folders`);
+    
+    try {
+      // Start watcher for each tracked folder
+      for (const folderPath of Array.from(trackedFolders)) {
+        console.log(`📁 Enabling auto-processing for: ${folderPath}`);
+        
+        const response = await fetch(`${apiClient.getBaseUrl()}/api/v1/vault/watcher/start?vault_path=${encodeURIComponent(folderPath)}`, {
           method: 'POST'
         });
         
         if (response.ok) {
-          setIsWatcherActive(true);
-          console.log('File watcher started');
+          console.log(`✅ Auto-processing enabled for ${folderPath}`);
+        } else {
+          console.warn(`⚠️ Failed to enable auto-processing for ${folderPath}`);
         }
       }
+      
+      setIsWatcherActive(true);
     } catch (error) {
-      console.error('Error toggling file watcher:', error);
+      console.error('Error enabling auto-processing:', error);
     }
   };
+
+  const disableAutoProcessing = async () => {
+    if (!apiClient) return;
+
+    try {
+      const response = await fetch(`${apiClient.getBaseUrl()}/api/v1/vault/watcher/stop`, {
+        method: 'POST'
+      });
+      
+      if (response.ok) {
+        setIsWatcherActive(false);
+        console.log('🛑 Auto-processing disabled');
+      }
+    } catch (error) {
+      console.error('Error disabling auto-processing:', error);
+    }
+  };
+
+  // Batch processing functions removed - using individual processing buttons instead
 
   const checkWatcherStatus = async () => {
     if (!apiClient) return;
 
     try {
-      const response = await fetch(`${apiClient.baseURL}/api/v1/vault/watcher/status`);
+      const response = await fetch(`${apiClient.getBaseUrl()}/api/v1/vault/watcher/status`);
       
       if (response.ok) {
         const result = await response.json();
@@ -590,10 +637,11 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
       const folderFileCount = node.children ? node.children.filter(c => c.type === 'file').length : 0;
       const pendingCount = node.children ? 
         node.children.filter(c => c.type === 'file' && c.status === 'unprocessed').length : 0;
+      const isTracked = trackedFolders.has(node.path);
 
       return (
         <div key={node.id} className="mb-1">
-          <div className={`flex items-center p-2 hover:bg-gray-50 rounded ${indentClass}`}>
+          <div className={`flex items-center p-2 hover:bg-gray-50 rounded ${indentClass} ${isTracked ? 'bg-blue-50 border-l-2 border-blue-400' : ''}`}>
             <button 
               onClick={() => toggleFolderExpansion(node.path)}
               className="w-6 h-6 flex items-center justify-center mr-2 hover:bg-gray-200 rounded"
@@ -601,8 +649,24 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
               <span className="text-xs">{node.isExpanded ? '▼' : '▶'}</span>
             </button>
             
+            {/* Folder tracking checkbox */}
+            <button
+              onClick={() => toggleFolderTracking(node.path)}
+              className={`w-5 h-5 flex items-center justify-center mr-2 rounded border-2 text-xs ${
+                isTracked 
+                  ? 'bg-blue-500 border-blue-500 text-white' 
+                  : 'border-gray-300 hover:border-blue-400'
+              }`}
+              title={isTracked ? 'Remove from auto-tracking' : 'Add to auto-tracking'}
+            >
+              {isTracked ? '✓' : ''}
+            </button>
+            
             <span className="text-base mr-2">📁</span>
-            <span className="flex-1 font-medium">{node.name}</span>
+            <span className={`flex-1 font-medium ${isTracked ? 'text-blue-700' : ''}`}>
+              {node.name}
+              {isTracked && <span className="ml-1 text-xs text-blue-600">(tracked)</span>}
+            </span>
             
             <div className="flex items-center gap-2 text-xs text-gray-500">
               <span>{folderFileCount} files</span>
@@ -743,6 +807,12 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
           >
             ⚙️ Settings
           </button>
+          <button
+            onClick={() => setShowFolderTracking(!showFolderTracking)}
+            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+          >
+            📁 Tracking ({trackedFolders.size})
+          </button>
         </div>
 
         {/* Settings Panel */}
@@ -791,6 +861,74 @@ export const FileManagerView: React.FC<FileManagerViewProps> = ({
               <p className="text-xs text-gray-600 mt-1">
                 Minimum time between processing the same file. Higher values prevent excessive processing during heavy editing.
               </p>
+            </div>
+          </div>
+        )}
+
+        {/* Folder Tracking Panel */}
+        {showFolderTracking && (
+          <div className="mb-4 p-4 bg-blue-50 rounded border border-blue-200">
+            <h4 className="font-medium mb-3">📁 Folder Auto-Processing</h4>
+            
+            <div className="mb-3 text-sm text-gray-600">
+              Select folders to automatically process when files change. Click the checkbox next to folders below to add/remove them.
+            </div>
+            
+            {trackedFolders.size > 0 ? (
+              <div className="mb-3">
+                <div className="text-sm font-medium mb-2">Tracked Folders ({trackedFolders.size}):</div>
+                <div className="text-xs bg-white p-2 rounded border max-h-20 overflow-y-auto">
+                  {Array.from(trackedFolders).map(folder => (
+                    <div key={folder} className="flex items-center justify-between py-1">
+                      <span className="text-blue-700">📁 {folder}</span>
+                      <button
+                        onClick={() => toggleFolderTracking(folder)}
+                        className="text-red-500 hover:text-red-700 ml-2"
+                        title="Remove from tracking"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="mb-3 text-sm text-gray-500 italic">
+                No folders selected for tracking. Click the checkbox next to folders below to add them.
+              </div>
+            )}
+            
+            <div className="flex gap-2">
+              {trackedFolders.size > 0 && (
+                <>
+                  <button
+                    onClick={enableAutoProcessingForTrackedFolders}
+                    disabled={isWatcherActive}
+                    className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600 disabled:opacity-50"
+                  >
+                    {isWatcherActive ? 'Auto-Processing Active' : 'Enable Auto-Processing'}
+                  </button>
+                  {isWatcherActive && (
+                    <button
+                      onClick={disableAutoProcessing}
+                      className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600"
+                    >
+                      Disable Auto-Processing
+                    </button>
+                  )}
+                </>
+              )}
+              <button
+                onClick={() => setTrackedFolders(new Set())}
+                disabled={trackedFolders.size === 0}
+                className="px-3 py-1 bg-gray-500 text-white rounded text-sm hover:bg-gray-600 disabled:opacity-50"
+              >
+                Clear All
+              </button>
+            </div>
+            
+            <div className="mt-2 text-xs text-gray-500">
+              💡 Auto-processing will monitor selected folders and automatically process new or modified files.
             </div>
           </div>
         )}

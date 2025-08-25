@@ -1,301 +1,377 @@
-# NotebookLocal - Complete RAG System Pipeline
+# NotebookLocal - Intelligence Processing Pipeline
 
-A comprehensive overview of the entire RAG system architecture and data flow pipeline.
+A comprehensive technical overview of the complete intelligence-driven processing pipeline from document ingestion through natural language interaction.
 
-## 🌊 **End-to-End Pipeline Flow**
+## 🌊 **Complete Service Pipeline Flow**
 
 ```mermaid
 graph TD
-    A[User Creates/Modifies File] --> B[VaultFileWatcher Detects Change]
-    B --> C[Calculate MD5 Hash]
-    C --> D{Content Changed?}
-    D -->|Yes| E[Update vault_files Table]
-    D -->|No| F[Skip Processing]
-    E --> G[Set Status: queued]
-    G --> H[Document Processor]
-    H --> I[Extract Text + Images]
-    I --> J[Generate Semantic Chunks]
-    J --> K[Create Embeddings]
-    K --> L[Store in Weaviate]
-    L --> M[Update PostgreSQL]
-    M --> N[Set Status: processed]
-    
-    O[User Opens Chat] --> P[Enhanced Chat Input]
-    P --> Q{Contains Commands?}
-    Q -->|/rag-enable| R[Execute Slash Commands]
-    Q -->|@filename.md| S[Parse @ Mentions]
-    Q -->|Regular text| T[RAG Query]
-    
-    R --> U[Update RAG Context]
-    S --> U
-    U --> T
-    T --> V[Retrieve Context from Weaviate]
-    V --> W[Generate LLM Response]
-    W --> X[Stream to User]
-    
+    %% Document Processing Pipeline
+    subgraph "📄 Document Processing Service"
+        A[File Change Detected] --> B[DocumentProcessingService]
+        B --> C[DocumentWorkflow LangGraph]
+        C --> D[PDF Extraction]
+        D --> E[Image Processing + Vision]
+        E --> F[Text Chunking]
+        F --> G[Embedding Generation]
+        G --> H[Hybrid Storage]
+        H --> I[Status: Processed]
+    end
+
+    %% Intelligence Pipeline  
+    subgraph "🧠 Intelligence Processing Service"
+        J[Natural Language Input] --> K[@Mention Parsing]
+        K --> L[Intent Detection]
+        L --> M[Capability Routing]
+        M --> N[Context Engine]
+        N --> O[Context Pyramid Building]
+        O --> P[LLM Generation]
+        P --> Q[Structured Response]
+    end
+
+    %% Storage Layer
+    subgraph "💾 Hybrid Storage Layer"
+        H --> R[(PostgreSQL)]
+        H --> S[(Weaviate Vector)]
+        N --> R
+        N --> S
+        O --> T[Enhanced Context]
+    end
+
+    %% Obsidian Plugin
+    subgraph "🧩 Obsidian Plugin Frontend"
+        U[FileManagerView] --> V[File Selection & Tracking]
+        V --> B
+        W[ChatInterface] --> J
+        Q --> X[Stream to User]
+        I --> Y[UI Status Update]
+    end
+
     style A fill:#e1f5fe
     style X fill:#c8e6c9
-    style H fill:#fff3e0
-    style V fill:#f3e5f5
+    style C fill:#fff3e0
+    style N fill:#f3e5f5
+    style H fill:#ede7f6
 ```
 
-## 🏗️ **System Architecture Layers**
+## 🏗️ **Modern Service Architecture**
 
-### **1. Frontend Layer (Obsidian Plugin)**
+### **1. Intelligence-First Design**
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Obsidian Plugin                          │
-├─────────────────┬─────────────────┬─────────────────────────┤
-│   Chat View     │  Context View   │     Files View          │
-│                 │                 │                         │
-│ • Streaming     │ • RAG Context   │ • File Tree            │
-│ • Commands      │ • Validation    │ • Status Indicators     │
-│ • @mentions     │ • Statistics    │ • Batch Operations      │
-└─────────────────┴─────────────────┴─────────────────────────┘
+│                 Intelligence Service Layer                  │
+├──────────────────┬──────────────────┬──────────────────────┤
+│  Intent Detection│  Context Engine  │ Capability Routing   │
+│                  │                  │                      │
+│ • Natural Lang   │ • Context Pyramid│ • UNDERSTAND Engine  │
+│ • @Mention Parse │ • File Relevance │ • NAVIGATE Engine    │
+│ • Confidence     │ • Vector Search  │ • TRANSFORM Engine   │
+│ • Sub-capability │ • Hybrid Results │ • SYNTHESIZE Engine  │
+└──────────────────┴──────────────────┴──────────────────────┘
+         │                    │                     │
+         └────────────────────┼─────────────────────┘
+                              │
+                    ┌─────────▼──────────┐
+                    │ IntelligenceService │
+                    │   Orchestration    │
+                    └─────────┬──────────┘
+                              │
+```
+
+### **2. Document Processing Service**
+```
+┌─────────────────────────────────────────────────────────────┐
+│               Document Processing Architecture               │
+├──────────────────┬──────────────────┬──────────────────────┤
+│ DocumentWorkflow │  BackgroundProc  │  Processing Models   │
+│   (LangGraph)    │   (Async Jobs)   │   (Data Types)       │
+│                  │                  │                      │
+│ • PDF Extract    │ • Job Tracking   │ • ProcessingResult   │
+│ • Image Process  │ • Progress Report│ • BatchProcessing    │
+│ • Text Chunking  │ • Error Recovery │ • Status Models     │
+│ • Embedding Gen  │ • Queue Mgmt     │ • Statistics         │
+└──────────────────┴──────────────────┴──────────────────────┘
+         │                    │                     │
+         └────────────────────┼─────────────────────┘
+                              │
+                    ┌─────────▼──────────┐
+                    │ DocumentProcessing │
+                    │     Service        │
+                    └─────────┬──────────┘
+                              │
+```
+
+### **3. Obsidian Plugin Layer**
+```
+┌─────────────────────────────────────────────────────────────┐
+│               Obsidian Plugin (React Components)            │
+├──────────────────┬──────────────────┬──────────────────────┤
+│ FileManagerView  │ ChatInterface    │ IntelligenceCtrl     │
+│                  │                  │                      │
+│ • Vault File Tree│ • Natural Input  │ • @Mention Parsing   │
+│ • Folder Tracking│ • Intent Display │ • API Orchestration  │
+│ • Process Control│ • Stream Response│ • Conversation Mgmt  │
+│ • Status Display │ • Source Citation│ • Context Preview    │
+└──────────────────┴──────────────────┴──────────────────────┘
          │                    │                     │
          └────────────────────┼─────────────────────┘
                               │
                     ┌─────────▼──────────┐
                     │   ApiClient        │
-                    │ (14 HTTP Endpoints)│
+                    │ (14+ HTTP Methods) │
                     └─────────┬──────────┘
-                              │
-```
-
-### **2. Backend Layer (Inference Server)**
-```
-┌─────────────────────────────────────────────────────────────┐
-│                  FastAPI Inference Server                  │
-├─────────────────┬─────────────────┬─────────────────────────┤
-│  Vault Routes   │ Context Routes  │    Chat Routes          │
-│  (8 endpoints)  │ (6 endpoints)   │   (Stream + Standard)   │
-└─────────────────┴─────────────────┴─────────────────────────┘
-         │                    │                     │
-         └────────────────────┼─────────────────────┘
                               │
                     ┌─────────▼──────────┐
-                    │  Document Processor│
-                    │  + LLM Router      │
-                    └─────────┬──────────┘
-                              │
+                    │ Obsidian Plugin    │
+                    │   Integration      │
+                    └────────────────────┘
 ```
 
-### **3. Storage Layer**
+## 📊 **Intelligence Processing Pipeline**
+
+### **Phase 1: Natural Language Understanding**
+1. **Input Processing** → User types natural language + @mentions
+2. **@Mention Parsing** → Extract file/folder references intelligently  
+3. **Intent Detection** → Classify into 5 capabilities with confidence
+4. **Sub-capability Routing** → Route to specific processing engine
+5. **Validation** → Ensure mentioned files exist and are accessible
+
+### **Phase 2: Context Building**
+1. **Mentioned Files** → Highest priority context (user-specified)
+2. **Current Note** → Active Obsidian file for current context
+3. **Vector Search** → Semantically similar content from vault
+4. **Hybrid Results** → Combine vector + keyword search
+5. **Context Pyramid** → Rank and optimize context for token limits
+6. **Context Assembly** → Build final context for LLM generation
+
+### **Phase 3: Intelligence Generation**
+1. **Capability Selection** → Route to appropriate engine
+2. **Context Injection** → Add relevant context to prompt
+3. **LLM Generation** → Generate response using context
+4. **Response Processing** → Structure and validate response
+5. **Source Attribution** → Track and include source citations
+6. **Streaming Response** → Real-time response delivery
+
+## 🔧 **Document Processing Pipeline**
+
+### **Modern LangGraph-Based Processing**
+```python
+# Document Workflow Stages (LangGraph)
+Stage 1: Extract      → PDF text + image extraction
+Stage 2: Prepare      → Image descriptions + text merging  
+Stage 3: Embed Store  → Vector generation + hybrid storage
+
+# Processing Service Orchestration
+DocumentProcessingService:
+├── process_file()          # Single file processing
+├── process_vault()         # Batch processing
+├── get_processing_status() # Real-time job tracking
+└── get_statistics()        # Processing metrics
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Storage Layer                            │
-├─────────────────────────┬───────────────────────────────────┤
-│     PostgreSQL          │         Weaviate                  │
-│                         │                                   │
-│ • vault_files (status)  │ • Vector embeddings               │
-│ • documents (metadata)  │ • Semantic search                 │
-│ • chunks (content)      │ • Hybrid search (vector+keyword)  │
-└─────────────────────────┴───────────────────────────────────┘
-```
 
-## 📊 **Data Flow by Component**
+### **Enhanced Processing Features**
+- **Vision Integration**: Image descriptions using multimodal LLMs
+- **Smart Chunking**: Context-aware text segmentation
+- **Hybrid Storage**: PostgreSQL metadata + Weaviate vectors
+- **Progress Tracking**: Real-time job status and metrics
+- **Error Recovery**: Graceful handling of processing failures
+- **Frequency Limiting**: Prevent excessive processing during editing
 
-### **File Processing Pipeline**
-1. **Detection** → VaultFileWatcher monitors Obsidian vault
-2. **Hashing** → MD5 content comparison for change detection  
-3. **Queuing** → vault_files table updated with 'queued' status
-4. **Processing** → Document processor extracts and chunks content
-5. **Embedding** → Generate vector embeddings for semantic search
-6. **Storage** → Store vectors in Weaviate, metadata in PostgreSQL
-7. **Completion** → Update status to 'processed', refresh UI
+## 🔄 **Real-Time File Management Pipeline**
 
-### **Command Processing Pipeline**
-1. **Input** → User types in EnhancedChatInput
-2. **Parsing** → CommandParser identifies /commands and @mentions
-3. **Validation** → Check command syntax and file existence
-4. **Execution** → RagContextManager processes commands
-5. **Update** → Context state synchronized with backend
-6. **Feedback** → UI updates with command results
-
-### **RAG Query Pipeline**
-1. **Context Building** → Determine active RAG context scope
-2. **Vector Search** → Query Weaviate for relevant chunks
-3. **Context Assembly** → Combine retrieved content for LLM
-4. **Generation** → LLM generates response with context
-5. **Streaming** → Real-time response delivery to user
-6. **Sources** → Display document sources for transparency
-
-## 🔧 **Key Integration Points**
-
-### **Frontend ↔ Backend Communication**
+### **FileManagerView Enhanced Features**
 ```typescript
-// 14 API Endpoints providing complete functionality
-ApiClient Methods:
-├── Vault Management (8)
-│   ├── getVaultFiles()        // List files with status
-│   ├── scanVault()           // Detect file changes
-│   ├── processVaultFiles()   // Queue processing
-│   └── getVaultStatus()      // Processing statistics
-├── RAG Context (6) 
-│   ├── setRagContext()       // Update context
-│   ├── getRagContext()       // Get current context
-│   ├── validateRagContext()  // Validate selection
-│   └── parseCommand()        // Process commands
-└── Chat & Search
-    ├── chat()                // Standard responses
-    └── chatStream()          // Streaming responses
+// Folder Tracking & Auto-Processing
+Features:
+├── File Tree Display        # Hierarchical vault view
+├── Processing Status Icons  # ✓ Processed, ⟳ Processing, ○ Pending
+├── Folder Selection UI      # Checkbox-based selection
+├── Auto-Processing Setup    # Monitor selected folders
+├── Frequency Controls       # Prevent excessive processing
+├── Manual Process Buttons   # Individual file/folder processing
+├── Batch Operations         # Process all pending files
+└── Real-time Status Updates # Live processing feedback
 ```
 
-### **Real-time Synchronization**
-```typescript
-// Multi-layer sync strategy
-Synchronization Points:
-├── File Changes → VaultFileWatcher → API call → DB update
-├── Processing Status → Periodic polling → UI refresh  
-├── Context Updates → Command execution → State sync
-└── Chat Messages → Streaming → Real-time display
+### **File Watcher & Processing Queue**
+```python
+# Enhanced File Watching
+FileWatcher:
+├── Smart Frequency Limiting  # 60s default between same file
+├── Force Processing         # Bypass frequency limits
+├── Multiple Path Monitoring # Track selected folders only
+├── Change Event Debouncing  # Reduce excessive triggers
+└── Status Reporting        # Real-time watcher status
+
+# Queue Management
+FileQueueManager:
+├── Priority Processing      # User-requested vs automatic
+├── Batch Operations        # Efficient multi-file processing
+├── Error Handling          # Retry failed processing
+├── Progress Reporting      # Live status updates
+└── Resource Management     # Prevent system overload
 ```
 
-## 📈 **Performance Characteristics**
+## 🎯 **API Architecture & Integration**
 
-### **Processing Throughput**
-- **File Detection**: ~50ms (debounced to 5s)
-- **Content Hashing**: ~10ms for typical documents
-- **Document Processing**: ~2-30s (depends on size/complexity)
-- **Vector Search**: ~100-500ms 
-- **LLM Response**: ~2-15s (streaming starts immediately)
-
-### **Storage Efficiency**
-- **Duplicate Detection**: MD5 hashing prevents reprocessing
-- **Content Caching**: Multi-layer cache (memory + disk)
-- **Database Indexing**: Optimized queries on status, path, modified_at
-- **Vector Compression**: Efficient storage in Weaviate
-
-### **Memory Management**
-- **Lazy Loading**: Components load on-demand
-- **Cache Expiration**: Automatic cleanup (1 hour default)
-- **Streaming**: Prevents memory buildup for large responses
-- **Event Cleanup**: Proper listener management
-
-## 🛠️ **Command System Architecture**
-
-### **Slash Commands (11 total)**
+### **Intelligence API Endpoints**
 ```bash
-/rag-* commands (6):     # RAG system control
-├── /rag-enable         # Enable RAG system  
-├── /rag-disable        # Disable RAG system
-├── /rag-toggle         # Toggle RAG on/off
-├── /rag-scope <type>   # Set context scope
-├── /rag-clear          # Clear context
-└── /rag-status         # Show status
+# Core Intelligence
+POST /api/v1/intelligence/chat        # Main natural language endpoint
+POST /api/v1/intelligence/intent      # Intent detection only
+GET  /api/v1/intelligence/capabilities # Available capabilities
+POST /api/v1/intelligence/context     # Context building
 
-/process-* commands (3): # File processing
-├── /process-file       # Queue single file
-├── /process-folder     # Queue entire folder  
-└── /reindex-vault      # Rebuild everything
+# Document Processing  
+POST /api/v1/documents/process-file   # Process single file
+POST /api/v1/documents/process-vault  # Batch processing
+GET  /api/v1/documents/stats          # Processing statistics
+GET  /api/v1/documents/status/{id}    # Job status tracking
 
-/show-* commands (2):    # Status display
-├── /show-files         # File processing status
-└── /show-queue         # Processing queue
+# File Management
+POST /api/v1/vault/scan               # Scan for file changes
+GET  /api/v1/vault/files              # List files with status
+POST /api/v1/vault/watcher/start      # Start file watching
+POST /api/v1/vault/watcher/config     # Configure frequency limits
 ```
 
-### **@ Mention System (4 types)**
-```bash
-@file-mentions:         # Specific file targeting
-├── @filename.md        # Add specific file
-└── @folder/            # Add folder contents
-
-@tag-mentions:          # Tag-based selection
-└── @#tag-name          # Files with specific tag
-
-@special-mentions:      # Dynamic selections  
-├── @recent             # Recently modified
-├── @active             # Currently active file
-├── @current            # Current editor file
-└── @all                # All vault files
-```
-
-## 🔄 **State Management Flow**
-
-### **RAG Context State**
+### **Frontend API Integration**
 ```typescript
-RagContext {
-  enabled: boolean              // RAG system on/off
-  scope: 'whole'|'selected'     // Context breadth
-  selectedFiles: Set<string>    // Individual files
-  selectedFolders: Set<string>  // Folder contents
-  selectedTags: Set<string>     // Tag-based files
-  temporalFilters: {            // Time-based filters
-    includeRecent: boolean
-    includeActive: boolean
-    recentDays: number
-  }
-  lastUpdated: Date            // Change tracking
+// ApiClient Methods (14+ endpoints)
+class ApiClient {
+  // Intelligence methods
+  intelligenceChat()           # Natural language processing
+  detectIntent()              # Intent classification
+  getIntelligenceCapabilities() # Available capabilities
+  buildContext()              # Context preview
+
+  // Document processing
+  processFile()               # Single file processing
+  processVault()              # Batch processing
+  getProcessingStats()        # Real-time statistics
+  
+  // File management
+  scanVault()                 # Trigger file scan
+  getVaultFiles()             # File listing with status
+  configureWatcher()          # Set processing frequency
+  getWatcherStatus()          # Monitor file watching
 }
 ```
 
-### **Processing Status Flow**
-```
-unprocessed → queued → processing → processed
-     ↑          ↑          ↓           ↓
-     └──────────┴── error ←───────────┘
+## 📈 **Performance & Monitoring Pipeline**
 
-Status Indicators:
-⚪ unprocessed  # Not yet processed
-🟡 queued       # Waiting in queue  
-🔄 processing   # Currently processing
-🟢 processed    # Ready for RAG
-🔴 error        # Processing failed
-```
-
-## 🎯 **User Experience Flow**
-
-### **Typical Workflow**
-1. **Setup**: Install plugin → Configure server connection
-2. **Enable**: `/rag-enable` → RAG indicator appears  
-3. **Context**: `@important-docs/` → Add content to context
-4. **Process**: Switch to Files tab → Process unprocessed files
-5. **Query**: "What are the main themes?" → Get RAG response
-6. **Iterate**: Adjust context, ask follow-up questions
-
-### **Advanced Workflows**
+### **Processing Performance Metrics**
 ```bash
-# Research Session
-/rag-scope selected
-@research-papers/ @meeting-notes/ @#important
-/rag-status
-"What are the key findings from recent research?"
+# Document Processing Benchmarks
+PDF Extraction:     ~500ms per page (text + images)
+Image Description:  ~2-5s per image (vision model)
+Text Chunking:      ~100ms per document
+Embedding Gen:      ~200ms per chunk batch
+Vector Storage:     ~150ms per batch insertion
 
-# Project Review  
-/rag-scope whole
-/show-files
-"What progress have we made on the quarterly goals?"
-
-# Focused Analysis
-@project-proposal.md 
-/rag-scope selected
-"What are the potential risks in this proposal?"
+# Intelligence Processing Benchmarks  
+Intent Detection:   ~200ms (local classification)
+Context Building:   ~300-800ms (vector + hybrid search)
+Context Assembly:   ~100ms (pyramid construction)
+LLM Generation:     ~2-15s (streaming starts immediately)
+Response Processing: ~50ms (structuring + sources)
 ```
+
+### **Comprehensive Logging Pipeline**
+```python
+# Multi-Level Logging System
+Document Workflow:
+├── Step-by-step processing logs   # 🔍 STEP 1: PDF extraction...
+├── Performance timing metrics     # ⏱️ Time taken: 2.34s
+├── Content statistics            # 📄 Pages: 12, Images: 3
+├── Error details with traceback  # ❌ STEP 2 FAILED: details...
+└── Success confirmation         # ✅ COMPLETED: 24 chunks stored
+
+Intelligence Processing:
+├── Intent detection results     # 🎯 Intent: UNDERSTAND/explain (0.87)
+├── Context building progress   # 📚 Built context: 2,340 tokens
+├── @Mention parsing details   # 📎 Detected: [@file1.md, @folder/]
+├── LLM generation metrics     # 🤖 Generated 450 tokens in 3.2s
+└── Response assembly results  # ✅ Response with 3 sources
+
+Frontend Integration:
+├── API call logging          # 🔄 Processing file: /path/file.pdf
+├── Error handling details    # ❌ File processing failed: 500 - details
+├── UI state changes         # 📊 Updated processing stats: 5 pending
+├── User interaction tracking # 👤 Folder selected for tracking
+└── Performance monitoring   # ⚡ FileTree built with 142 items
+```
+
+## 🛠️ **Modern Development Pipeline**
+
+### **Service Independence**
+```bash
+# Backend Service (FastAPI)
+Development:
+├── Hot reload enabled         # Automatic code reloading
+├── Comprehensive logging     # Full observability
+├── API documentation        # Auto-generated Swagger/OpenAPI
+├── Environment configuration # Docker-ready deployment
+└── Database migrations      # Alembic schema versioning
+
+# Obsidian Plugin (React + Obsidian API)
+Development:
+├── TypeScript strict mode   # Type safety enforcement
+├── ESBuild compilation     # Fast plugin builds
+├── Tailwind CSS           # Utility-first styling
+├── Component hot reload   # Instant UI updates in dev
+├── Obsidian API integration # Native vault access
+└── API client generation  # Type-safe HTTP methods
+```
+
+### **Production Readiness Features**
+- **Plugin Error Boundaries**: Graceful Obsidian plugin error handling
+- **Background Processing**: Non-blocking document workflows
+- **Resource Management**: Memory and CPU usage optimization
+- **Security**: Input validation and sanitization
+- **Monitoring**: Health checks and metrics collection
+- **Plugin Distribution**: Easy installation via Obsidian Community Plugins
 
 ## 🔐 **Security & Privacy Pipeline**
 
 ### **Data Flow Security**
-- **Local First**: File content stays in your vault
-- **Transport Security**: HTTPS in production
-- **Processing Security**: Temporary files cleaned up
-- **No Retention**: Server doesn't store personal data
+```bash
+Security Layers:
+├── Input Validation         # Sanitize all user inputs
+├── Path Safety Validation   # Prevent directory traversal
+├── File Type Restrictions   # Only process safe file types
+├── Resource Limits         # Prevent resource exhaustion
+├── Error Information Filtering # No sensitive data in errors
+└── Local-First Architecture    # Data stays in your vault
+```
 
-### **Input Validation Pipeline**
-```
-User Input → Command Parser → Validation → Sanitization → Execution
-         ↓                  ↓             ↓              ↓
-    Syntax Check    →  File Existence → Path Safety → Safe Execution
-```
+### **Privacy-First Design**
+- **No Data Retention**: Server processes but doesn't store personal content
+- **Local Storage**: All permanent data stays in your Obsidian vault
+- **Temporary Processing**: Intermediate files cleaned up immediately
+- **Optional Cloud**: LLM calls only when user initiates processing
+- **Transport Security**: HTTPS in production environments
 
 ---
 
-**🎉 Complete RAG System Pipeline**
+## 🎉 **Modern Intelligence Pipeline Summary**
 
-This pipeline documentation provides a comprehensive view of how the NotebookLocal RAG system processes data from file creation through intelligent responses, ensuring users understand the complete flow of their information through the system.
+**Key Architectural Improvements:**
 
-**Key Benefits:**
-- **Transparency**: Clear understanding of data flow
-- **Performance**: Optimized at each pipeline stage  
-- **Reliability**: Multiple validation and error handling points
-- **Privacy**: Local-first architecture with optional cloud AI
-- **Usability**: Command-driven interface with visual feedback
+1. **Intelligence-First**: Natural language understanding drives all interactions
+2. **Service Architecture**: Clear separation of concerns with independent services  
+3. **Real-Time Processing**: Background workflows with live status updates
+4. **Enhanced UX**: Intuitive file management with folder tracking
+5. **Production Ready**: Comprehensive logging, error handling, and monitoring
+6. **Scalable Design**: Services can be independently deployed and scaled
+
+**Pipeline Benefits:**
+- **Developer Experience**: Hot reload, type safety, comprehensive logging
+- **User Experience**: Natural language interaction directly within Obsidian
+- **Native Integration**: Seamless vault access through Obsidian API
+- **Performance**: Optimized processing with smart frequency limiting
+- **Reliability**: Graceful error handling and recovery mechanisms
+- **Security**: Local-first with privacy-focused design
+- **Plugin Ecosystem**: Easy distribution through Obsidian Community Plugins
+
+This modern pipeline transforms NotebookLocal from a simple RAG system into a comprehensive, production-ready intelligent vault assistant with enterprise-grade architecture and user experience.

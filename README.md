@@ -1,6 +1,8 @@
 # NotebookLocal - Intelligent Vault Assistant
 
-A **context-aware AI assistant** for Obsidian vaults that understands your notes and responds naturally. Think "Claude Code for your knowledge vault" - no commands needed, just ask naturally with intelligent @mentions.
+A **context-aware AI assistant** for Obsidian vaults that understands your notes and responds naturally. Built with a **service-oriented architecture** combining FastAPI intelligence backend with Obsidian plugin frontend, featuring real-time document processing and natural language interaction.
+
+**Core Philosophy**: Transform knowledge work from command-driven to conversation-driven through intelligent document understanding and natural language processing.
 
 ## 🧠 Philosophy: Context-Aware Intelligence
 
@@ -115,41 +117,81 @@ Suggest better organization for my files
 3. **Processes** using the appropriate engine
 4. **Executes** and provides insights with source citations
 
-## 📁 Updated Project Structure
+## 📁 Service Architecture Overview
 
 ```
 26th-summer-NotebookLocal/
-├── README.md                          # This overview document
-├── inference-server/                  # Python FastAPI backend
-│   ├── src/intelligence/             # 🧠 Core intelligence system
+├── README.md                          # Service overview & philosophy
+├── PIPELINE.md                        # Complete technical pipeline
+├── inference-server/                  # 🐍 Python FastAPI Backend Service
+│   ├── src/intelligence/             # 🧠 Intelligence Processing Core
 │   │   ├── context_engine.py         # Context pyramid builder
-│   │   ├── intent_detector.py        # Natural language → intent
-│   │   ├── capability_router.py      # Route to appropriate engine
-│   │   └── engines/                  # 5 capability engines
-│   │       ├── understand_engine.py  # Q&A with vault truth
-│   │       ├── navigate_engine.py    # Discovery and search
-│   │       ├── transform_engine.py   # Content editing
-│   │       ├── synthesize_engine.py  # Pattern extraction
-│   │       └── maintain_engine.py    # Vault health
-│   ├── api/                          # API layer
-│   │   ├── intelligence_routes.py    # Main intelligence endpoint
-│   │   ├── vault_routes.py          # File management
-│   │   └── routes.py                # Core processing
-│   └── src/                         # Supporting systems
-│       ├── storage/hybrid_store.py  # Vector + keyword search
-│       ├── database/models.py       # PostgreSQL models
-│       └── llm/core/router.py       # LLM routing
-├── notebook-local/                   # Obsidian plugin
-│   ├── src/intelligence/            # Frontend intelligence layer
-│   │   └── IntelligenceController.ts # @mention parsing + API
-│   ├── src/components/              # React UI
-│   │   ├── NotebookLocalView.tsx    # Main interface (simplified)
-│   │   ├── EnhancedChatInput.tsx    # Natural language input
-│   │   └── ContextPreviewPanel.tsx  # Capability guide
-│   └── src/vault/                   # File system bridge
-│       ├── VaultProcessingManager.ts # Obsidian → inference server
-│       └── VaultFileWatcher.ts      # Real-time sync
+│   │   ├── intent_detector.py        # Natural language → intent routing
+│   │   ├── capability_router.py      # Route to capability engines
+│   │   └── intelligence_service.py   # Main orchestration service
+│   ├── src/services/                 # 🔧 Business Logic Services
+│   │   ├── document_processing_service.py  # Document workflow orchestration
+│   │   ├── processing_models.py      # Data models & types
+│   │   └── background_processor.py   # Async processing worker
+│   ├── src/workflows/                # 📋 Processing Workflows
+│   │   └── document_workflow.py      # LangGraph document pipeline
+│   ├── src/processors/              # ⚙️  Content Processors
+│   │   ├── pdf_processor.py          # PDF text/image extraction
+│   │   ├── image_processor.py        # Vision model descriptions
+│   │   ├── text_processor.py         # Chunking & tokenization
+│   │   └── embedder.py               # Vector embedding generation
+│   ├── src/storage/                 # 💾 Data Storage Layer
+│   │   ├── hybrid_store.py          # PostgreSQL + Vector hybrid
+│   │   └── vector_store.py          # Weaviate/vector operations
+│   ├── src/vault/                   # 📁 File Management Services
+│   │   ├── file_manager.py          # File metadata management
+│   │   ├── file_watcher.py          # Real-time change detection
+│   │   └── file_queue_manager.py    # Processing queue management
+│   ├── api/                         # 🌐 API Gateway Layer
+│   │   ├── intelligence_routes.py   # Intelligence endpoints
+│   │   ├── document_routes.py       # Document processing API
+│   │   ├── vault_routes.py         # File management API
+│   │   └── main.py                 # FastAPI application
+│   └── src/llm/core/               # 🤖 LLM Integration Layer
+│       ├── router.py               # Multi-model routing
+│       └── providers/              # Model provider implementations
+└── notebook-local/                 # 🧩 Obsidian Plugin (React Components)
+    ├── src/intelligence/           # 🧠 Plugin Intelligence Controller
+    │   └── IntelligenceController.ts # Natural language processing
+    ├── src/components/             # 🎨 React UI Components for Obsidian
+    │   ├── NotebookLocalView.tsx   # Main tabbed interface (Obsidian view)
+    │   ├── FileManagerView.tsx     # File tree & processing controls
+    │   ├── EnhancedChatInput.tsx   # Natural language input
+    │   └── IntentIndicator.tsx     # Real-time intent feedback
+    ├── src/api/                    # 🔗 API Client Layer
+    │   └── ApiClient-clean.ts      # HTTP client with 14+ endpoints
+    ├── src/settings/               # ⚙️  Plugin Configuration Management
+    │   └── model-clean.ts          # Settings & state management
+    └── main.ts                     # Obsidian Plugin Entry Point
 ```
+
+### 🏛️ **Service Design Philosophy**
+
+**1. Separation of Concerns**
+- **Backend Service**: Pure intelligence processing, document workflows, data management
+- **Obsidian Plugin**: User experience, real-time UI, vault integration within Obsidian
+- **Clear API Boundaries**: RESTful endpoints with comprehensive error handling
+
+**2. Service-Oriented Architecture** 
+- **Microservice-like Components**: Each service handles specific business logic
+- **Event-driven Processing**: File changes trigger async document workflows
+- **Horizontal Scalability**: Services can be independently scaled
+
+**3. Modern Development Stack**
+- **Backend**: FastAPI + PostgreSQL + LangGraph + Vector Search
+- **Obsidian Plugin**: React + TypeScript + Tailwind CSS + Obsidian API
+- **Infrastructure**: Docker-ready, environment-configurable
+
+**4. Production-Ready Features**
+- **Comprehensive Logging**: Full observability across all services
+- **Error Handling**: Graceful degradation and recovery
+- **Background Processing**: Non-blocking document workflows
+- **Real-time Updates**: WebSocket-like experience through polling
 
 ## 🚀 Quick Start
 

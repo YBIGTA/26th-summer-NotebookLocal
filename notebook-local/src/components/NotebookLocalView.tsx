@@ -253,6 +253,11 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
     leaf.openFile(file);
   };
 
+  const handleFolderSelect = (folder: any) => {
+    // Optional: Handle folder selection for navigation or other actions
+    console.log('Folder selected:', folder.path);
+  };
+
   // Legacy context management removed
 
   return (
@@ -516,6 +521,7 @@ function ChatInterface({ apiClient }: NotebookLocalViewProps) {
           <div style={{ height: '100%', overflow: 'hidden' }}>
             <FileManagerView
               onFileSelect={handleFileSelect}
+              onFolderSelect={handleFolderSelect}
               apiClient={apiClient}
             />
           </div>
